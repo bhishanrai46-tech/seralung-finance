@@ -1,0 +1,120 @@
+import streamlit as st
+
+# -------------------------
+# PAGE CONFIG
+# -------------------------
+st.set_page_config(page_title="AI Financial Planner", layout="wide")
+
+# -------------------------
+# CLEAN UI STYLE
+# -------------------------
+st.markdown("""
+<style>
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+    }
+    .card {
+        background: #1e293b;
+        padding: 18px;
+        border-radius: 12px;
+        margin-bottom: 12px;
+        color: white;
+    }
+    h1, h2, h3 {
+        color: white;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+st.title("💰 AI Financial Planner")
+
+# -------------------------
+# INPUTS
+# -------------------------
+st.sidebar.header("Enter Your Data")
+
+income = st.sidebar.number_input("Monthly Income", 0)
+expenses = st.sidebar.number_input("Monthly Expenses", 0)
+savings = st.sidebar.number_input("Total Savings", 0)
+debt = st.sidebar.number_input("Total Debt", 0)
+
+# -------------------------
+# CALCULATIONS
+# -------------------------
+needs = income * 0.5
+wants = income * 0.3
+invest = income * 0.2
+
+net_worth = savings - debt
+savings_rate = (savings / income * 100) if income > 0 else 0
+
+# -------------------------
+# 💡 FINANCIAL HEALTH SCORE (0–100)
+# -------------------------
+score = 50  # base score
+
+if income > 0:
+    score += min(savings_rate * 0.5, 25)   # savings improves score
+    score -= min((debt / income) * 20, 30) # debt reduces score
+
+score = max(0, min(100, score))
+
+# -------------------------
+# 📊 INSIGHT MESSAGE
+# -------------------------
+if score >= 80:
+    insight = "Excellent financial health. Keep investing and scaling wealth."
+elif score >= 60:
+    insight = "Good financial position. Improve savings consistency."
+elif score >= 40:
+    insight = "Moderate risk. Reduce expenses and increase savings."
+else:
+    insight = "High financial risk. Focus on debt reduction immediately."
+
+# -------------------------
+# ⚠️ WARNING SYSTEM
+# -------------------------
+warning = ""
+if debt > savings:
+    warning = "⚠️ Warning: Your debt is higher than your savings!"
+elif debt > income * 3:
+    warning = "⚠️ High debt level compared to income!"
+
+# -------------------------
+# UI OUTPUT
+# -------------------------
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("💡 Financial Health Score")
+    st.metric("Score", f"{score}/100")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col2:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("📊 Savings Rate")
+    st.write(f"{savings_rate:.1f}%")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+with col3:
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.subheader("Net Worth")
+    st.write(f"${net_worth:,.2f}")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown("---")
+
+st.markdown("### 📊 Monthly Insight")
+st.info(insight)
+
+if warning:
+    st.error(warning)
+
+st.markdown("---")
+
+st.subheader("50/30/20 Breakdown")
+st.write("Needs:", needs)
+st.write("Wants:", wants)
+st.write("Invest:", invest)
