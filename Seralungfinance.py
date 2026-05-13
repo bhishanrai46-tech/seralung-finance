@@ -651,7 +651,7 @@ with tabs[0]:
     # AI Insights
     st.markdown('<p class="section-title">AI Insights</p>', unsafe_allow_html=True)
     insights = []
-    if budget["variances"]["wants"] > 0 if "variances" not in budget else False:
+    if "variances" in budget and budget["variances"]["wants"] > 0:
         pass
     wants_var = budget["wants"] - budget["targets"]["wants"]
     if wants_var > 0:
