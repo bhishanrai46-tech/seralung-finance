@@ -1,1166 +1,820 @@
-"""
-FINORA — AI Financial Planner Web App
-Run: streamlit run finora_app.py
-Share: Deploy to https://streamlit.io/cloud (free)
-"""
-
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
-from datetime import date, datetime
+import pandas as pd
 import math
-
-# ── PAGE CONFIG ──────────────────────────────────────────────────────
+ 
+# ─── Page config ────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Finora — Financial Planner",
-    page_icon="💎",
-    layout="wide",
-    initial_sidebar_state="expanded",
+    page_title="Seralung Finance",
+    page_icon="💰",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
-
-# ── CUSTOM CSS — Premium dark theme ─────────────────────────────────
-st.markdown("""
+ 
+# ─── Themes ─────────────────────────────────────────────────────────────────
+THEMES = {
+    "Slate (Default)": {
+        "bg": "#0F1117",
+        "surface": "#1A1D27",
+        "surface2": "#22263A",
+        "border": "#2E3350",
+        "accent": "#6C8EF5",
+        "accent2": "#4ECDC4",
+        "text": "#E8EAF6",
+        "muted": "#8B90B0",
+        "green": "#43D9A2",
+        "red": "#FF6B6B",
+        "amber": "#FFB347",
+        "chart_colors": ["#6C8EF5", "#4ECDC4", "#FF6B6B", "#FFB347", "#43D9A2", "#C084FC"],
+    },
+    "Ivory (Light)": {
+        "bg": "#FAFAF8",
+        "surface": "#FFFFFF",
+        "surface2": "#F4F3F0",
+        "border": "#E5E3DC",
+        "accent": "#3D5A80",
+        "accent2": "#98C1D9",
+        "text": "#1A1A1A",
+        "muted": "#6B6B6B",
+        "green": "#2D6A4F",
+        "red": "#C1121F",
+        "amber": "#E76F51",
+        "chart_colors": ["#3D5A80", "#98C1D9", "#E76F51", "#2D6A4F", "#E9C46A", "#8B5CF6"],
+    },
+    "Forest (Earthy)": {
+        "bg": "#1A2018",
+        "surface": "#232C20",
+        "surface2": "#2C3828",
+        "border": "#3D5C36",
+        "accent": "#7EC850",
+        "accent2": "#A8D878",
+        "text": "#E6F0E0",
+        "muted": "#8AA880",
+        "green": "#7EC850",
+        "red": "#E8685A",
+        "amber": "#F0B840",
+        "chart_colors": ["#7EC850", "#A8D878", "#F0B840", "#E8685A", "#5BC8AF", "#C4A0DC"],
+    },
+    "Sand (Minimal)": {
+        "bg": "#F5F0E8",
+        "surface": "#FFFFFF",
+        "surface2": "#EDE8DC",
+        "border": "#D4CBBA",
+        "accent": "#8B7355",
+        "accent2": "#C4A882",
+        "text": "#2C2416",
+        "muted": "#7A6E60",
+        "green": "#4A7C59",
+        "red": "#C0392B",
+        "amber": "#D4883A",
+        "chart_colors": ["#8B7355", "#C4A882", "#4A7C59", "#D4883A", "#5B8DB8", "#9B59B6"],
+    },
+    "Midnight (Deep Blue)": {
+        "bg": "#060B18",
+        "surface": "#0D1526",
+        "surface2": "#142035",
+        "border": "#1E3050",
+        "accent": "#4FC3F7",
+        "accent2": "#29B6F6",
+        "text": "#E1F0FF",
+        "muted": "#6A8BAA",
+        "green": "#26C6DA",
+        "red": "#EF5350",
+        "amber": "#FFA726",
+        "chart_colors": ["#4FC3F7", "#26C6DA", "#EF5350", "#FFA726", "#AB47BC", "#66BB6A"],
+    },
+    "Rose (Warm Pink)": {
+        "bg": "#FDF6F0",
+        "surface": "#FFFFFF",
+        "surface2": "#FAF0EC",
+        "border": "#F0D8D0",
+        "accent": "#C2666A",
+        "accent2": "#E8958A",
+        "text": "#2D1A1A",
+        "muted": "#8A6060",
+        "green": "#5B8A6A",
+        "red": "#C2403A",
+        "amber": "#D4883A",
+        "chart_colors": ["#C2666A", "#E8958A", "#5B8A6A", "#D4883A", "#5B78B8", "#8B5CF6"],
+    },
+}
+ 
+# ─── Sidebar ─────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("## ◈ Seralung Finance")
+    st.markdown("---")
+    theme_name = st.selectbox("🎨 Theme", list(THEMES.keys()))
+    T = THEMES[theme_name]
+    st.markdown("---")
+ 
+# ─── Global CSS injection ─────────────────────────────────────────────────────
+st.markdown(f"""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap');
-
-html, body, [class*="css"] {
-    font-family: 'DM Sans', sans-serif;
-    background-color: #0a0a0f;
-    color: #e8e8f0;
-}
-
-/* Sidebar */
-section[data-testid="stSidebar"] {
-    background: #0f0f1a;
-    border-right: 1px solid #1e1e2e;
-}
-
-/* Cards */
-.fin-card {
-    background: linear-gradient(135deg, #13131f 0%, #1a1a2e 100%);
-    border: 1px solid #2a2a42;
-    border-radius: 16px;
-    padding: 24px;
-    margin-bottom: 16px;
-    transition: border-color 0.2s;
-}
-.fin-card:hover { border-color: #4f46e5; }
-
-.metric-card {
-    background: linear-gradient(135deg, #13131f 0%, #1a1a2e 100%);
-    border: 1px solid #2a2a42;
-    border-radius: 12px;
-    padding: 20px;
-    text-align: center;
-}
-.metric-label {
-    font-size: 11px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: #6b6b8a;
-    margin-bottom: 8px;
-    font-weight: 500;
-}
-.metric-value {
-    font-family: 'DM Serif Display', serif;
-    font-size: 28px;
-    color: #e8e8f0;
-    line-height: 1;
-}
-.metric-value.positive { color: #34d399; }
-.metric-value.negative { color: #f87171; }
-.metric-value.accent   { color: #818cf8; }
-
-/* Section headers */
-.section-title {
-    font-family: 'DM Serif Display', serif;
-    font-size: 22px;
-    color: #e8e8f0;
-    margin: 8px 0 20px;
-    border-left: 3px solid #4f46e5;
-    padding-left: 12px;
-}
-
-/* Insight cards */
-.insight-card {
-    background: #0f1629;
-    border: 1px solid #1e3a5f;
-    border-left: 3px solid #4f46e5;
-    border-radius: 10px;
-    padding: 14px 18px;
-    margin: 8px 0;
-    font-size: 14px;
-    line-height: 1.6;
-    color: #c8c8e0;
-}
-.insight-card.warning { border-left-color: #f59e0b; border-color: #3d2e0f; background: #130f05; }
-.insight-card.danger  { border-left-color: #f87171; border-color: #3d1515; background: #130505; }
-.insight-card.success { border-left-color: #34d399; border-color: #0f3d2e; background: #051309; }
-
-/* Progress bar */
-.prog-wrap { background: #1e1e2e; border-radius: 99px; height: 8px; margin: 6px 0; }
-.prog-fill  { height: 8px; border-radius: 99px; background: linear-gradient(90deg,#4f46e5,#818cf8); }
-.prog-fill.green { background: linear-gradient(90deg,#059669,#34d399); }
-.prog-fill.yellow { background: linear-gradient(90deg,#d97706,#fbbf24); }
-.prog-fill.red    { background: linear-gradient(90deg,#dc2626,#f87171); }
-
-/* Score ring */
-.score-display {
-    text-align: center;
-    padding: 20px;
-}
-.score-number {
-    font-family: 'DM Serif Display', serif;
-    font-size: 64px;
-    line-height: 1;
-    background: linear-gradient(135deg, #818cf8, #34d399);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-.score-label { font-size: 13px; color: #6b6b8a; margin-top: 4px; }
-
-/* Logo */
-.logo-wrap {
-    padding: 20px 0 28px;
-    text-align: center;
-}
-.logo-name {
-    font-family: 'DM Serif Display', serif;
-    font-size: 26px;
-    letter-spacing: 0.02em;
-    background: linear-gradient(135deg, #818cf8, #34d399);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-.logo-tag { font-size: 11px; color: #4b4b6a; letter-spacing: 0.1em; margin-top: 2px; }
-
-/* Streamlit overrides */
-div[data-testid="metric-container"] {
-    background: #13131f;
-    border: 1px solid #2a2a42;
-    border-radius: 12px;
-    padding: 16px;
-}
-.stSlider > div > div > div { background: #4f46e5 !important; }
-h1, h2, h3 { font-family: 'DM Serif Display', serif !important; }
-.stTabs [data-baseweb="tab"] { color: #6b6b8a; font-size: 14px; }
-.stTabs [aria-selected="true"] { color: #818cf8 !important; border-bottom-color: #4f46e5 !important; }
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&d…
+ 
+html, body, [class*="css"] {{
+    font-family: 'DM Sans', sans-serif;
+    background-color: {T['bg']};
+    color: {T['text']};
+}}
+.stApp {{ background-color: {T['bg']}; }}
+[data-testid="stSidebar"] {{
+    background-color: {T['surface']};
+    border-right: 1px solid {T['border']};
+}}
+[data-testid="stSidebar"] * {{ color: {T['text']} !important; }}
+.block-container {{ padding-top: 1.5rem; padding-bottom: 2rem; }}
+ 
+/* Metric cards */
+[data-testid="metric-container"] {{
+    background: {T['surface']};
+    border: 1px solid {T['border']};
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+}}
+[data-testid="metric-container"] label {{ color: {T['muted']} !important; font-size: 0.75rem !important; }}
+[data-testid="metric-container"] [data-testid="stMetricValue"] {{ color: {T['text']} !important; font-weight: 600; }}
+ 
+/* Tabs */
+[data-testid="stTabs"] [role="tab"] {{
+    background: {T['surface2']};
+    border: 1px solid {T['border']};
+    border-radius: 8px;
+    color: {T['muted']};
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 0.4rem 1rem;
+    margin-right: 4px;
+}}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"] {{
+    background: {T['accent']};
+    color: {'#fff' if THEMES[theme_name]['bg'] != '#FAFAF8' else '#fff'};
+    border-color: {T['accent']};
+}}
+[data-testid="stTabs"] [role="tablist"] {{ border-bottom: 1px solid {T['border']}; padding-bottom: 0.5rem; }}
+ 
+/* Inputs */
+[data-testid="stNumberInput"] input,
+[data-testid="stTextInput"] input,
+textarea {{
+    background: {T['surface2']} !important;
+    border: 1px solid {T['border']} !important;
+    border-radius: 8px !important;
+    color: {T['text']} !important;
+    font-family: 'DM Sans', sans-serif !important;
+}}
+[data-testid="stSlider"] [data-baseweb="slider"] div[role="slider"] {{
+    background: {T['accent']} !important;
+}}
+ 
+/* Selectbox */
+[data-testid="stSelectbox"] > div > div {{
+    background: {T['surface2']} !important;
+    border: 1px solid {T['border']} !important;
+    color: {T['text']} !important;
+    border-radius: 8px !important;
+}}
+ 
+/* Buttons */
+[data-testid="baseButton-primary"], .stButton > button {{
+    background: {T['accent']} !important;
+    border: none !important;
+    border-radius: 8px !important;
+    color: #fff !important;
+    font-weight: 500 !important;
+    font-family: 'DM Sans', sans-serif !important;
+}}
+.stButton > button:hover {{
+    opacity: 0.88 !important;
+    transform: translateY(-1px);
+}}
+ 
+/* Dividers */
+hr {{ border-color: {T['border']}; }}
+ 
+/* Headers */
+h1, h2, h3 {{ color: {T['text']} !important; font-weight: 600; }}
+ 
+/* Section cards */
+.sf-card {{
+    background: {T['surface']};
+    border: 1px solid {T['border']};
+    border-radius: 14px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 1rem;
+}}
+.sf-card-title {{
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: {T['muted']};
+    margin-bottom: 1rem;
+}}
+.sf-badge-green {{
+    background: {T['green']}22;
+    color: {T['green']};
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+    display: inline-block;
+}}
+.sf-badge-red {{
+    background: {T['red']}22;
+    color: {T['red']};
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+    display: inline-block;
+}}
+.sf-badge-amber {{
+    background: {T['amber']}22;
+    color: {T['amber']};
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 6px;
+    display: inline-block;
+}}
+.sf-tip {{
+    background: {T['accent']}18;
+    border-left: 3px solid {T['accent']};
+    border-radius: 0 8px 8px 0;
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+    color: {T['text']};
+    margin-bottom: 1rem;
+    line-height: 1.5;
+}}
+.sf-proj-row {{
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid {T['border']};
+    font-size: 0.875rem;
+    color: {T['text']};
+}}
+.sf-proj-row:last-child {{ border-bottom: none; font-weight: 600; }}
 </style>
 """, unsafe_allow_html=True)
-
-# ── PLOTLY THEME ─────────────────────────────────────────────────────
-PLOT_BG    = "#0a0a0f"
-PAPER_BG   = "#13131f"
-GRID_COLOR = "#1e1e2e"
-TEXT_COLOR = "#9090b0"
-ACCENT     = "#818cf8"
-GREEN      = "#34d399"
-RED        = "#f87171"
-YELLOW     = "#fbbf24"
-
-def dark_layout(fig, title="", height=320):
-    fig.update_layout(
-        title=dict(text=title, font=dict(color="#e8e8f0", size=14, family="DM Serif Display")),
-        paper_bgcolor=PAPER_BG,
-        plot_bgcolor=PLOT_BG,
-        font=dict(color=TEXT_COLOR, family="DM Sans"),
-        height=height,
-        margin=dict(l=20, r=20, t=40 if title else 20, b=20),
-        xaxis=dict(gridcolor=GRID_COLOR, zeroline=False),
-        yaxis=dict(gridcolor=GRID_COLOR, zeroline=False),
-        showlegend=True,
-        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=12)),
-    )
-    return fig
-
-# ══════════════════════════════════════════════════════════════════════
-# CALCULATION ENGINE  (self-contained, no imports)
-# ══════════════════════════════════════════════════════════════════════
-
-ATO_BRACKETS = [
-    (18_200, 0.0,   0),
-    (45_000, 0.19,  0),
-    (120_000,0.325, 5_092),
-    (180_000,0.37,  29_467),
-    (1e9,    0.45,  51_667),
-]
-MEDICARE = 0.02
-SUPER_SG = 0.115
-SWR      = 0.04
-
-def calc_tax(gross):
-    tax = 0.0
-    prev = 0
-    for threshold, rate, base in ATO_BRACKETS:
-        if gross <= threshold:
-            tax = base + (gross - prev) * rate
-            break
-        prev = threshold
-    lito = 0.0
-    if gross <= 37_500:    lito = 700
-    elif gross <= 45_000:  lito = 700 - (gross - 37_500) * 0.05
-    elif gross <= 66_667:  lito = 325 - (gross - 45_000) * 0.015
-    medicare = gross * MEDICARE
-    net_tax = max(0, tax - lito) + medicare
-    return {
-        "income_tax": round(tax, 2),
-        "lito": round(lito, 2),
-        "medicare": round(medicare, 2),
-        "total_tax": round(net_tax, 2),
-        "net_annual": round(gross - net_tax, 2),
-        "net_monthly": round((gross - net_tax) / 12, 2),
-        "eff_rate": round(net_tax / gross * 100, 2) if gross else 0,
-    }
-
-def budget_analyse(net_income, expenses: dict, extra_debt=0, extra_invest=0):
-    NEEDS  = {"rent","mortgage","groceries","utilities","insurance",
-               "transport","phone","internet","childcare","medical"}
-    WANTS  = {"dining","entertainment","clothing","subscriptions","gym","travel","hobbies"}
-    SAVES  = {"savings","investments","super","emergency"}
-    n = w = s = u = 0.0
-    for k, v in expenses.items():
-        key = k.lower().replace(" ","_")
-        if key in NEEDS:  n += v
-        elif key in WANTS: w += v
-        elif key in SAVES: s += v
-        else: u += v
-    s += extra_debt + extra_invest
-    total = n + w + s + u
-    return {
-        "needs": n, "wants": w, "savings": s, "uncategorized": u,
-        "total": total,
-        "surplus": net_income - total,
-        "savings_rate": s / net_income * 100 if net_income else 0,
-        "targets": {"needs": net_income*.5, "wants": net_income*.3, "savings": net_income*.2},
-    }
-
-def invest_project(current, annual_contrib, rate, years):
-    rows = []
-    bal = current
-    for yr in range(1, years+1):
-        bal = bal * (1 + rate) + annual_contrib
-        rows.append({"year": yr, "balance": round(bal,2),
-                      "contributed": round(annual_contrib*yr,2),
-                      "growth": round(bal - current - annual_contrib*yr, 2)})
-    return rows
-
-def risk_score(age, income, total_debt, timeline, experience, tolerance, has_ef, deps):
-    s = 0
-    if age < 25:   s += 20
-    elif age < 35: s += 17
-    elif age < 45: s += 13
-    elif age < 55: s += 9
-    elif age < 65: s += 5
-    else:          s += 2
-    dti = total_debt / income if income else 1
-    if dti < 0.15:   s += 15
-    elif dti < 0.30: s += 10
-    elif dti < 0.50: s += 5
-    if timeline >= 20: s += 20
-    elif timeline >= 10: s += 15
-    elif timeline >= 5: s += 10
-    elif timeline >= 2: s += 5
-    s += (experience - 1) * 4
-    s += (tolerance - 1) * 5
-    s += 5 if has_ef else 0
-    s -= deps * 3
-    return max(0, min(100, s))
-
-def debt_payoff(debts, extra=0):
-    def sim(sorted_d):
-        ds = [dict(d) for d in sorted_d]
-        interest = 0.0
-        months = 0
-        while any(d["balance"] > 0 for d in ds):
-            months += 1
-            if months > 600: break
-            for d in ds:
-                if d["balance"] <= 0: continue
-                i = d["balance"] * d["rate"] / 12
-                interest += i
-                d["balance"] += i - d["min"]
-                if d["balance"] < 0: d["balance"] = 0
-            rem = extra
-            for d in ds:
-                if d["balance"] > 0 and rem > 0:
-                    pay = min(rem, d["balance"])
-                    d["balance"] -= pay; rem -= pay; break
-        return months, round(interest, 2)
-    av_sorted = sorted(debts, key=lambda x: -x["rate"])
-    sn_sorted = sorted(debts, key=lambda x:  x["balance"])
-    av_m, av_i = sim(av_sorted)
-    sn_m, sn_i = sim(sn_sorted)
-    return {"avalanche": {"months": av_m, "interest": av_i},
-            "snowball":  {"months": sn_m, "interest": sn_i}}
-
-def goal_calc(target, saved, monthly_contrib, target_date, return_rate=0.05):
-    today = date.today()
-    months_left = max(1, (target_date.year - today.year)*12 + (target_date.month - today.month))
-    shortfall = max(0, target - saved)
-    r = return_rate / 12
-    if r > 0:
-        req_monthly = shortfall * r / ((1+r)**months_left - 1)
-    else:
-        req_monthly = shortfall / months_left
-    # simulate to find actual completion
-    bal = saved
-    months_to_goal = None
-    for m in range(1, 601):
-        bal = bal * (1+r) + monthly_contrib
-        if bal >= target:
-            months_to_goal = m; break
-    proj = None
-    if months_to_goal:
-        yr = today.year + months_to_goal // 12
-        mo = today.month + months_to_goal % 12
-        if mo > 12: yr += 1; mo -= 12
-        proj = date(yr, mo, 1)
-    return {
-        "shortfall": shortfall,
-        "months_left": months_left,
-        "req_monthly": round(req_monthly, 2),
-        "gap": round(monthly_contrib - req_monthly, 2),
-        "on_track": proj is not None and proj <= target_date,
-        "projected": proj,
-        "pct": min(100, saved / target * 100) if target else 0,
-    }
-
-def health_score(monthly_exp, ef, net_income, monthly_savings,
-                  total_debt, annual_income, total_invest,
-                  surplus, net_worth, prev_nw=0):
-    s = {}
-    ef_mo = ef / monthly_exp if monthly_exp else 0
-    s["Emergency Fund"] = 20 if ef_mo>=6 else (15 if ef_mo>=3 else (8 if ef_mo>=1 else 0))
-    sr = monthly_savings / net_income * 100 if net_income else 0
-    s["Savings Rate"] = 20 if sr>=30 else (17 if sr>=20 else (10 if sr>=10 else (5 if sr>=5 else 0)))
-    dti = total_debt / annual_income if annual_income else 1
-    s["Debt Load"] = 20 if dti<0.15 else (15 if dti<0.30 else (8 if dti<0.50 else (3 if dti<1 else 0)))
-    ir = total_invest / (annual_income*5)*100 if annual_income else 0
-    s["Investments"] = 20 if ir>=50 else (15 if ir>=25 else (8 if ir>=10 else (3 if ir>0 else 0)))
-    sp = surplus / net_income*100 if net_income else 0
-    s["Budget Control"] = 10 if sp>=10 else (7 if sp>=0 else 0)
-    ngr = (net_worth - prev_nw) / prev_nw * 100 if prev_nw else (5 if net_worth > 0 else 0)
-    s["Net Worth Growth"] = 10 if ngr>=10 else (7 if ngr>=5 else (4 if ngr>=0 else 0))
-    total = sum(s.values())
-    grade = ("A+ Excellent" if total>=85 else "A  Very Good" if total>=70 else
-             "B  Good" if total>=55 else "C  Fair" if total>=40 else
-             "D  Needs Work" if total>=25 else "F  Critical")
-    return {"scores": s, "total": total, "grade": grade, "maxes": {
-        "Emergency Fund":20,"Savings Rate":20,"Debt Load":20,
-        "Investments":20,"Budget Control":10,"Net Worth Growth":10}}
-
-def super_projection(current, age, ret_age, salary, vol_contrib=0, ret=0.07):
-    yrs = ret_age - age
-    sg  = salary * SUPER_SG
-    total_c = sg + vol_contrib
-    bal = current
-    for _ in range(yrs):
-        bal = bal * (1+ret) + total_c * 0.85
-    return {"balance": round(bal,2),
-            "monthly_4pct": round(bal*SWR/12,2),
-            "years": yrs, "annual_sg": round(sg,2)}
-
-def fi_calc(nw, annual_savings, annual_expenses, ret=0.07):
-    target = annual_expenses / SWR
-    bal = nw
-    for yr in range(1, 101):
-        bal = bal*(1+ret) + annual_savings
-        if bal >= target:
-            return {"fi_number": round(target,2), "years": yr, "pct": round(nw/target*100,2)}
-    return {"fi_number": round(target,2), "years": ">100", "pct": round(nw/target*100,2)}
-
-# Business models
-def biz_freelance(rate, hrs_week, util, overhead_monthly, tax_rate, weeks=46):
-    gross = rate * hrs_week * weeks * util
-    net_bt = gross - overhead_monthly*12
-    tax    = max(0, net_bt * tax_rate)
-    net_at = net_bt - tax
-    billed = hrs_week * weeks * util
-    return {"gross": round(gross,2), "net": round(net_at,2),
-            "monthly": round(net_at/12,2),
-            "eff_hourly": round(net_at/billed,2) if billed else 0,
-            "billed_hrs": round(billed)}
-
-def biz_saas(price, customers_y, churn=0.05, cogs_pct=0.20, fixed=36000, cac=200):
-    results = []
-    for yr, cust in enumerate(customers_y, 1):
-        avg = cust * (1 - churn*6)
-        arr = avg * price * 12
-        cogs = arr * cogs_pct
-        acq = cust * cac
-        gp  = arr - cogs
-        np  = gp - fixed - acq
-        results.append({"year":yr,"customers":int(avg),"mrr":round(arr/12,2),
-                         "arr":round(arr,2),"gross_profit":round(gp,2),"net_profit":round(np,2)})
-    return results
-
-def biz_ecom(aov, orders_y, cogs=0.40, returns=0.08, ads_monthly=1000, platform=0.03, fulfilment=8):
-    results = []
-    for yr, mo_ord in enumerate(orders_y, 1):
-        ann = mo_ord * 12
-        gross = ann * aov
-        ret_  = gross * returns
-        net_r = gross - ret_
-        cogs_ = net_r * cogs
-        plt_  = net_r * platform
-        ful_  = ann * fulfilment
-        ads_  = ads_monthly * 12
-        gp    = net_r - cogs_
-        np    = gp - plt_ - ful_ - ads_
-        margin= np/gross*100 if gross else 0
-        results.append({"year":yr,"monthly_orders":mo_ord,"gross_revenue":round(gross,2),
-                         "gross_profit":round(gp,2),"net_profit":round(np,2),"margin":round(margin,1)})
-    return results
-
-def biz_agency(retainer, clients_y, overhead_monthly=1800, staff_monthly=0, churn=0.28):
-    results = []
-    for yr, cl in enumerate(clients_y, 1):
-        avg = cl * (1 - churn/2)
-        rev = avg * retainer * 12
-        np  = rev - (overhead_monthly+staff_monthly)*12
-        results.append({"year":yr,"clients":round(avg,1),"revenue":round(rev,2),
-                         "net_profit":round(np,2),"margin":round(np/rev*100 if rev else 0,1)})
-    return results
-
-# ══════════════════════════════════════════════════════════════════════
-# SIDEBAR — USER INPUTS
-# ══════════════════════════════════════════════════════════════════════
-
-with st.sidebar:
-    st.markdown("""
-    <div class="logo-wrap">
-      <div class="logo-name">◆ Finora</div>
-      <div class="logo-tag">FINANCIAL INTELLIGENCE</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown("### 👤 Your Profile")
-    name = st.text_input("Name", "Alex Chen")
-    age  = st.slider("Age", 18, 70, 32)
-
-    st.markdown("### 💰 Income")
-    gross_income   = st.number_input("Annual Gross Salary ($)", 30000, 500000, 95000, 1000)
-    other_income   = st.number_input("Other Monthly Income ($)", 0, 20000, 800, 100,
-                                      help="Side hustle, rental, dividends")
-
-    st.markdown("### 🏠 Monthly Expenses")
-    rent           = st.number_input("Rent / Mortgage ($)",   0, 10000, 2100, 50)
-    groceries      = st.number_input("Groceries ($)",          0,  5000,  550, 25)
-    transport      = st.number_input("Transport ($)",          0,  3000,  280, 25)
-    utilities      = st.number_input("Utilities ($)",          0,  2000,  160, 10)
-    phone_internet = st.number_input("Phone + Internet ($)",   0,   500,  135, 5)
-    insurance      = st.number_input("Insurance ($)",          0,  2000,  200, 10)
-    dining         = st.number_input("Dining Out ($)",         0,  3000,  380, 25)
-    entertainment  = st.number_input("Entertainment ($)",      0,  2000,  120, 10)
-    clothing       = st.number_input("Clothing ($)",           0,  2000,  150, 10)
-    subscriptions  = st.number_input("Subscriptions ($)",      0,  1000,   95,  5)
-    gym            = st.number_input("Gym / Fitness ($)",      0,   500,   60,  5)
-    savings_contr  = st.number_input("Manual Savings ($)",     0,  5000,  500, 50)
-
-    st.markdown("### 💳 Debts")
-    car_balance    = st.number_input("Car Loan Balance ($)",      0, 100000, 14200, 500)
-    car_rate       = st.slider("Car Loan Rate (%)",  1.0, 20.0, 6.9, 0.1) / 100
-    car_min        = st.number_input("Car Min Payment ($)",       0, 2000, 380, 10)
-    cc_balance     = st.number_input("Credit Card Balance ($)",   0,  50000, 3400, 100)
-    cc_rate        = st.slider("Credit Card Rate (%)", 5.0, 30.0, 19.9, 0.1) / 100
-    cc_min         = st.number_input("CC Min Payment ($)",        0, 2000, 150, 10)
-    extra_debt_pay = st.number_input("Extra Debt Payment ($/mo)", 0, 2000, 200, 50)
-
-    st.markdown("### 📈 Investments")
-    invest_etf     = st.number_input("ETF Portfolio Value ($)",   0, 1000000, 27700, 500)
-    invest_stocks  = st.number_input("Stocks Value ($)",          0, 1000000,  3800, 500)
-    invest_crypto  = st.number_input("Crypto Value ($)",          0,  500000,  4100, 100)
-    invest_contrib = st.number_input("Monthly Invest Contribution ($)", 0, 10000, 600, 50)
-    super_balance  = st.number_input("Super Balance ($)",         0, 2000000, 42000, 500)
-    super_vol      = st.number_input("Voluntary Super Contr ($/yr)", 0, 27500, 5000, 500)
-    ef_balance     = st.number_input("Emergency Fund ($)",         0,  200000, 8500, 500)
-    savings_acc    = st.number_input("Savings Account ($)",        0,  200000, 12000, 500)
-
-    st.markdown("### 🎯 Goals")
-    g1_name   = st.text_input("Goal 1 Name", "House Deposit")
-    g1_target = st.number_input("Goal 1 Target ($)", 1000, 2000000, 120000, 1000)
-    g1_saved  = st.number_input("Goal 1 Saved ($)", 0, 2000000, 12000, 500)
-    g1_monthly= st.number_input("Goal 1 Monthly ($)", 0, 10000, 1200, 100)
-    g1_date   = st.date_input("Goal 1 Date", date(2028, 6, 30))
-
-    g2_name   = st.text_input("Goal 2 Name", "Europe Trip")
-    g2_target = st.number_input("Goal 2 Target ($)", 500, 200000, 8000, 500)
-    g2_saved  = st.number_input("Goal 2 Saved ($)", 0, 200000, 1500, 100)
-    g2_monthly= st.number_input("Goal 2 Monthly ($)", 0, 5000, 400, 50)
-    g2_date   = st.date_input("Goal 2 Date", date(2025, 12, 31))
-
-    st.markdown("### ⚙️ Settings")
-    ret_age   = st.slider("Retirement Age", 50, 70, 67)
-    inv_return= st.slider("Expected Investment Return (%)", 3.0, 12.0, 7.0, 0.5) / 100
-    dependents= st.slider("Dependents", 0, 6, 0)
-    risk_exp  = st.slider("Investment Experience (1–5)", 1, 5, 3)
-    risk_tol  = st.slider("Risk Tolerance (1–5)", 1, 5, 3)
-
-# ══════════════════════════════════════════════════════════════════════
-# COMPUTE ALL VALUES
-# ══════════════════════════════════════════════════════════════════════
-
-# Tax
-tax = calc_tax(gross_income)
-net_monthly = tax["net_monthly"] + other_income
-
-# Expenses dict
-expenses = {
-    "rent": rent, "groceries": groceries, "transport": transport,
-    "utilities": utilities, "phone": phone_internet, "insurance": insurance,
-    "dining": dining, "entertainment": entertainment, "clothing": clothing,
-    "subscriptions": subscriptions, "gym": gym, "savings": savings_contr,
-}
-total_expenses = sum(expenses.values())
-debt_payments  = car_min + cc_min
-invest_annual  = invest_contrib * 12
-
-# Budget
-budget = budget_analyse(net_monthly, expenses, debt_payments, invest_contrib)
-
-# Net worth
-total_investments = invest_etf + invest_stocks + invest_crypto
-total_assets      = ef_balance + savings_acc + total_investments + super_balance
-total_debt        = car_balance + cc_balance
-net_worth         = total_assets - total_debt
-
-# Investment projection
-total_invest_now  = total_investments
-proj_rows         = invest_project(total_invest_now, invest_annual, inv_return, 20)
-
-# Risk
-r_score = risk_score(age, gross_income, total_debt, age-18+2,  # rough timeline
-                      risk_exp, risk_tol, ef_balance > 0, dependents)
-
-# Goals
-g1 = goal_calc(g1_target, g1_saved, g1_monthly, g1_date, inv_return)
-g2 = goal_calc(g2_target, g2_saved, g2_monthly, g2_date, inv_return)
-
-# Debt payoff
-debts_list = [
-    {"balance": car_balance, "rate": car_rate, "min": car_min, "name": "Car Loan"},
-    {"balance": cc_balance,  "rate": cc_rate,  "min": cc_min,  "name": "Credit Card"},
-]
-payoff = debt_payoff(debts_list, extra_debt_pay)
-
-# Super
-super_proj = super_projection(super_balance, age, ret_age, gross_income, super_vol, inv_return)
-
-# FI
-fi = fi_calc(net_worth, invest_annual + savings_contr*12, total_expenses*12, inv_return)
-
-# Health score
-hs = health_score(
-    total_expenses, ef_balance, net_monthly, budget["savings"],
-    total_debt, gross_income, total_investments,
-    budget["surplus"], net_worth, net_worth * 0.88
-)
-
-# ══════════════════════════════════════════════════════════════════════
-# MAIN CONTENT — TABS
-# ══════════════════════════════════════════════════════════════════════
-
-st.markdown(f"""
-<h1 style="font-family:'DM Serif Display',serif; font-size:32px;
-    background:linear-gradient(135deg,#818cf8,#34d399);
-    -webkit-background-clip:text; -webkit-text-fill-color:transparent;
-    margin-bottom:4px;">
-  ◆ Finora
-</h1>
-<p style="color:#4b4b6a; font-size:13px; margin-bottom:24px; letter-spacing:0.08em;">
-  FINANCIAL INTELLIGENCE ENGINE &nbsp;·&nbsp; {name.upper()}
-</p>
-""", unsafe_allow_html=True)
-
-tabs = st.tabs([
-    "📊 Dashboard", "💸 Budget", "📈 Investments",
-    "🎯 Goals", "💳 Debt", "🏢 Business", "🔮 Retirement"
+ 
+# ─── Plotly theme helper ──────────────────────────────────────────────────────
+def plot_layout(title="", height=280):
+    return dict(
+        title=title,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(family="DM Sans", color=T["muted"], size=11),
+        height=height,
+        margin=dict(l=10, r=10, t=30 if title else 10, b=10),
+        legend=dict(
+            font=dict(color=T["muted"], size=11),
+            bgcolor="rgba(0,0,0,0)",
+            borderwidth=0,
+        ),
+        xaxis=dict(gridcolor=T["border"], linecolor=T["border"], showgrid=True),
+        yaxis=dict(gridcolor=T["border"], linecolor=T["border"], showgrid=True),
+    )
+ 
+# ─── Session state defaults ───────────────────────────────────────────────────
+def _init(key, val):
+    if key not in st.session_state:
+        st.session_state[key] = val
+ 
+_init("expenses", [
+    {"name": "Rent / Mortgage", "amount": 1500.0},
+    {"name": "Groceries", "amount": 400.0},
+    {"name": "Transport", "amount": 200.0},
+    {"name": "Dining & Entertainment", "amount": 300.0},
+    {"name": "Subscriptions", "amount": 80.0},
 ])
-
-# ─────────────────────────────────────────
-# TAB 1 — DASHBOARD
-# ─────────────────────────────────────────
-with tabs[0]:
-
-    # Top KPIs
-    c1, c2, c3, c4, c5 = st.columns(5)
-    def kpi(col, label, value, cls=""):
-        col.markdown(f"""
-        <div class="metric-card">
-          <div class="metric-label">{label}</div>
-          <div class="metric-value {cls}">{value}</div>
-        </div>""", unsafe_allow_html=True)
-
-    kpi(c1, "Net Worth",       f"${net_worth:,.0f}",    "positive" if net_worth > 0 else "negative")
-    kpi(c2, "Monthly Take-Home", f"${net_monthly:,.0f}", "accent")
-    kpi(c3, "Savings Rate",    f"{budget['savings_rate']:.1f}%", "positive" if budget['savings_rate'] >= 20 else "negative")
-    kpi(c4, "Health Score",    f"{hs['total']}/100",    "positive" if hs['total'] >= 55 else "negative")
-    kpi(c5, "FI Progress",     f"{fi['pct']:.1f}%",     "accent")
-
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    col_left, col_right = st.columns([3, 2])
-
-    with col_left:
-        st.markdown('<p class="section-title">Net Worth Breakdown</p>', unsafe_allow_html=True)
-        fig_nw = go.Figure()
-        fig_nw.add_trace(go.Bar(
-            x=["Cash & EF", "ETF/Stocks/Crypto", "Superannuation"],
-            y=[ef_balance + savings_acc, total_investments, super_balance],
-            marker_color=[ACCENT, GREEN, YELLOW],
-            name="Assets", text=[f"${v:,.0f}" for v in [ef_balance+savings_acc, total_investments, super_balance]],
-            textposition="outside", textfont=dict(color=TEXT_COLOR, size=11),
-        ))
-        fig_nw.add_trace(go.Bar(
-            x=["Car Loan", "Credit Card"],
-            y=[-car_balance, -cc_balance],
-            marker_color=[RED, "#fb923c"],
-            name="Debts", text=[f"-${v:,.0f}" for v in [car_balance, cc_balance]],
-            textposition="outside", textfont=dict(color=TEXT_COLOR, size=11),
-        ))
-        dark_layout(fig_nw, height=280)
-        fig_nw.update_layout(barmode="relative", xaxis_tickfont=dict(size=11))
-        st.plotly_chart(fig_nw, use_container_width=True, config={"displayModeBar": False})
-
-    with col_right:
-        st.markdown('<p class="section-title">Financial Health</p>', unsafe_allow_html=True)
-        grade = hs["grade"].split()[0]
-        color = "#34d399" if hs["total"] >= 70 else "#fbbf24" if hs["total"] >= 50 else "#f87171"
-        st.markdown(f"""
-        <div style="text-align:center; padding: 10px 0 20px;">
-          <div style="font-family:'DM Serif Display',serif; font-size:56px;
-               background:linear-gradient(135deg,{color},{ACCENT});
-               -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
-            {hs['total']}
-          </div>
-          <div style="color:#6b6b8a; font-size:12px; letter-spacing:0.1em;">{hs['grade'].upper()}</div>
-        </div>""", unsafe_allow_html=True)
-
-        for dim, pts in hs["scores"].items():
-            mx  = hs["maxes"][dim]
-            pct = int(pts / mx * 100)
-            cls = "green" if pct >= 75 else "yellow" if pct >= 40 else "red"
-            st.markdown(f"""
-            <div style="margin-bottom:8px;">
-              <div style="display:flex; justify-content:space-between; font-size:12px; color:#9090b0; margin-bottom:3px;">
-                <span>{dim}</span><span style="color:#e8e8f0;">{pts}/{mx}</span>
-              </div>
-              <div class="prog-wrap"><div class="prog-fill {cls}" style="width:{pct}%"></div></div>
-            </div>""", unsafe_allow_html=True)
-
-    # AI Insights
-    st.markdown('<p class="section-title">AI Insights</p>', unsafe_allow_html=True)
-    insights = []
-    if "variances" in budget and budget["variances"]["wants"] > 0:
-        pass
-    wants_var = budget["wants"] - budget["targets"]["wants"]
-    if wants_var > 0:
-        insights.append(("warning", f"💡 Wants spending is ${wants_var:,.0f} over budget. Investing this monthly adds ~${wants_var*12*10:,.0f} to your portfolio over 10 years at {inv_return*100:.0f}% return."))
-    if budget["savings_rate"] < 20:
-        insights.append(("warning", f"⚠️ Savings rate is {budget['savings_rate']:.1f}% — below the 20% target. Each 1% improvement moves your FI date forward ~6 months."))
-    if budget["surplus"] > 300:
-        insights.append(("success", f"✅ ${budget['surplus']:,.0f}/month surplus detected. Auto-invest this into VGS or IVV for maximum compounding."))
-    ef_months = ef_balance / total_expenses if total_expenses else 0
-    if ef_months < 3:
-        insights.append(("danger", f"🚨 Emergency fund covers only {ef_months:.1f} months. Build to 3–6 months (${total_expenses*3:,.0f}) before investing aggressively."))
-    if cc_balance > 0 and cc_rate > 0.12:
-        insights.append(("danger", f"💳 Credit card at {cc_rate*100:.1f}% interest. Paying this off = a guaranteed {cc_rate*100:.0f}% return — better than most investments."))
-    if not insights:
-        insights.append(("success", "✅ Finances are in solid shape. Keep building momentum!"))
-
-    ins_cols = st.columns(min(len(insights), 2))
-    for i, (typ, msg) in enumerate(insights):
-        ins_cols[i % 2].markdown(f'<div class="insight-card {typ}">{msg}</div>', unsafe_allow_html=True)
-
-    # Tax summary
-    st.markdown('<p class="section-title">Tax Summary (ATO 2024–25)</p>', unsafe_allow_html=True)
-    t1, t2, t3, t4 = st.columns(4)
-    kpi(t1, "Gross Income",    f"${gross_income:,.0f}")
-    kpi(t2, "Total Tax",       f"${tax['total_tax']:,.0f}", "negative")
-    kpi(t3, "Net Annual",      f"${tax['net_annual']:,.0f}", "positive")
-    kpi(t4, "Effective Rate",  f"{tax['eff_rate']}%")
-
-# ─────────────────────────────────────────
-# TAB 2 — BUDGET
-# ─────────────────────────────────────────
-with tabs[1]:
-    st.markdown('<p class="section-title">50/30/20 Budget Analysis</p>', unsafe_allow_html=True)
-
-    bc1, bc2, bc3 = st.columns(3)
-    for col, cat, actual, target in [
-        (bc1, "Needs (50%)",    budget["needs"],   budget["targets"]["needs"]),
-        (bc2, "Wants (30%)",    budget["wants"],   budget["targets"]["wants"]),
-        (bc3, "Savings (20%)",  budget["savings"], budget["targets"]["savings"]),
-    ]:
-        var = actual - target
-        cls = "positive" if var <= 0 else "negative"
-        col.markdown(f"""
-        <div class="fin-card">
-          <div class="metric-label">{cat}</div>
-          <div class="metric-value">${actual:,.0f}</div>
-          <div style="font-size:12px; color:#6b6b8a; margin:6px 0;">Target ${target:,.0f}</div>
-          <div style="font-size:13px; color:{'#34d399' if var<=0 else '#f87171'};">
-            {'+' if var>=0 else ''}${var:,.0f} {'over' if var > 0 else 'under'}
-          </div>
-        </div>""", unsafe_allow_html=True)
-
-    # Donut
-    fig_budget = go.Figure(go.Pie(
-        labels=["Needs", "Wants", "Savings", "Uncategorized"],
-        values=[budget["needs"], budget["wants"], budget["savings"], budget["uncategorized"]],
-        hole=0.55,
-        marker_colors=[ACCENT, YELLOW, GREEN, "#6b6b8a"],
-        textfont=dict(color="#e8e8f0", size=12),
-    ))
-    fig_budget.update_layout(
-        paper_bgcolor=PAPER_BG, plot_bgcolor=PLOT_BG,
-        height=300, margin=dict(l=0,r=0,t=0,b=0),
-        showlegend=True,
-        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT_COLOR)),
-        annotations=[dict(text=f"${net_monthly:,.0f}<br>net/mo",
-                          font=dict(size=14, color="#e8e8f0"), showarrow=False)],
-    )
-
-    col_d, col_b = st.columns([1, 2])
-    with col_d:
-        st.plotly_chart(fig_budget, use_container_width=True, config={"displayModeBar": False})
-    with col_b:
-        st.markdown('<p class="section-title" style="font-size:16px">Expense Breakdown</p>', unsafe_allow_html=True)
-        for cat, amt in sorted(expenses.items(), key=lambda x: -x[1]):
-            pct = amt / total_expenses * 100 if total_expenses else 0
-            cls = "green" if pct < 10 else "yellow" if pct < 20 else "red"
-            st.markdown(f"""
-            <div style="margin-bottom:7px;">
-              <div style="display:flex;justify-content:space-between;font-size:12px;color:#9090b0;margin-bottom:2px;">
-                <span style="text-transform:capitalize;">{cat}</span>
-                <span style="color:#e8e8f0;">${amt:,.0f} &nbsp; <span style="color:#6b6b8a">{pct:.1f}%</span></span>
-              </div>
-              <div class="prog-wrap"><div class="prog-fill {cls}" style="width:{min(pct*3,100):.0f}%"></div></div>
-            </div>""", unsafe_allow_html=True)
-
-    sr_color = "#34d399" if budget["savings_rate"] >= 20 else "#f87171"
-    st.markdown(f"""
-    <div class="fin-card" style="margin-top:16px;">
-      <span class="metric-label">Monthly Surplus</span>
-      <span style="font-family:'DM Serif Display',serif; font-size:22px; color:{'#34d399' if budget['surplus'] > 0 else '#f87171'};">
-        ${budget['surplus']:+,.2f}
-      </span>
-      &nbsp;&nbsp;
-      <span class="metric-label" style="margin-left:30px">Savings Rate</span>
-      <span style="font-family:'DM Serif Display',serif; font-size:22px; color:{sr_color}">
-        {budget['savings_rate']:.1f}%
-      </span>
-    </div>""", unsafe_allow_html=True)
-
-# ─────────────────────────────────────────
-# TAB 3 — INVESTMENTS
-# ─────────────────────────────────────────
-with tabs[2]:
-    st.markdown('<p class="section-title">Portfolio Overview</p>', unsafe_allow_html=True)
-
-    i1, i2, i3, i4 = st.columns(4)
-    kpi(i1, "Total Portfolio",   f"${total_investments:,.0f}", "accent")
-    kpi(i2, "Annual Contribution", f"${invest_annual:,.0f}")
-    kpi(i3, "Expected Return",   f"{inv_return*100:.1f}%/yr", "positive")
-    kpi(i4, "10-Year Target",    f"${proj_rows[9]['balance']:,.0f}", "positive")
-
-    # Portfolio allocation donut
-    alloc_labels = ["ETFs", "Stocks", "Crypto"]
-    alloc_vals   = [invest_etf, invest_stocks, invest_crypto]
-    fig_alloc = go.Figure(go.Pie(
-        labels=alloc_labels, values=alloc_vals, hole=0.55,
-        marker_colors=[ACCENT, GREEN, YELLOW],
-    ))
-    fig_alloc.update_layout(
-        paper_bgcolor=PAPER_BG, plot_bgcolor=PLOT_BG,
-        height=280, margin=dict(l=0,r=0,t=0,b=0),
-        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT_COLOR)),
-        annotations=[dict(text="Allocation", font=dict(size=13, color="#9090b0"), showarrow=False)],
-    )
-
-    # 20-year growth chart
-    years   = [r["year"] for r in proj_rows]
-    balance = [r["balance"] for r in proj_rows]
-    contrib = [r["contributed"] + total_invest_now for r in proj_rows]
-    growth  = [r["growth"] for r in proj_rows]
-
-    fig_growth = go.Figure()
-    fig_growth.add_trace(go.Scatter(x=years, y=balance, name="Portfolio Value",
-        line=dict(color=ACCENT, width=2.5),
-        fill="tozeroy", fillcolor="rgba(129,140,248,0.08)"))
-    fig_growth.add_trace(go.Scatter(x=years, y=contrib, name="Amount Invested",
-        line=dict(color=GREEN, width=1.5, dash="dot")))
-    dark_layout(fig_growth, "20-Year Portfolio Growth", 300)
-    fig_growth.update_layout(xaxis_title="Years", yaxis_title="Value ($)",
-                              yaxis_tickformat="$,.0f")
-
-    c_alloc, c_growth = st.columns([1, 2])
-    with c_alloc:
-        st.plotly_chart(fig_alloc, use_container_width=True, config={"displayModeBar": False})
-    with c_growth:
-        st.plotly_chart(fig_growth, use_container_width=True, config={"displayModeBar": False})
-
-    # Risk profile
-    st.markdown('<p class="section-title">Risk Profile</p>', unsafe_allow_html=True)
-    r1, r2 = st.columns([1, 2])
-    with r1:
-        prof = ("Conservative" if r_score < 20 else "Moderate" if r_score < 40 else
-                "Balanced" if r_score < 60 else "Growth" if r_score < 80 else "Aggressive")
-        color = GREEN if r_score < 40 else YELLOW if r_score < 65 else RED
-        st.markdown(f"""
-        <div class="fin-card" style="text-align:center">
-          <div class="metric-label">Risk Score</div>
-          <div style="font-family:'DM Serif Display',serif;font-size:52px;color:{color};">{r_score}</div>
-          <div style="color:{color};font-size:13px;font-weight:500;">{prof}</div>
-          <div style="color:#6b6b8a;font-size:11px;margin-top:8px;">Max drawdown ~{int(r_score*0.6)}%</div>
-        </div>""", unsafe_allow_html=True)
-    with r2:
-        alloc_map = {
-            "Conservative": {"Cash/Bonds": 70, "Defensive ETFs": 20, "Broad ETFs": 10},
-            "Moderate":      {"Bonds": 40, "Broad ETFs": 35, "Growth ETFs": 15, "Cash": 10},
-            "Balanced":      {"Broad ETFs": 40, "Growth ETFs": 25, "Bonds": 25, "Intl ETFs": 10},
-            "Growth":        {"Growth ETFs": 40, "Broad ETFs": 30, "Intl ETFs": 20, "Crypto": 10},
-            "Aggressive":    {"Growth ETFs": 40, "Tech ETFs": 25, "Intl ETFs": 20, "Crypto": 15},
-        }
-        rec = alloc_map.get(prof, alloc_map["Balanced"])
-        fig_rec = go.Figure(go.Pie(
-            labels=list(rec.keys()), values=list(rec.values()), hole=0.45,
-            marker_colors=[ACCENT, GREEN, YELLOW, "#fb923c", RED],
-        ))
-        fig_rec.update_layout(
-            paper_bgcolor=PAPER_BG, plot_bgcolor=PLOT_BG,
-            height=240, margin=dict(l=0,r=0,t=20,b=0),
-            title=dict(text="Recommended Allocation", font=dict(color="#e8e8f0", size=13)),
-            legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(color=TEXT_COLOR, size=11)),
-        )
-        st.plotly_chart(fig_rec, use_container_width=True, config={"displayModeBar": False})
-
-# ─────────────────────────────────────────
+_init("goals", [])
+_init("risk_profile", "Moderate")
+_init("needs_pct", 50)
+_init("wants_pct", 30)
+_init("invest_pct", 20)
+_init("em_pct", 30)
+_init("idx_pct", 40)
+_init("stk_pct", 20)
+_init("cry_pct", 10)
+ 
+# ─── Header ──────────────────────────────────────────────────────────────────
+col_logo, col_sub = st.columns([3, 1])
+with col_logo:
+    st.markdown(f"<h1 style='margin:0; font-size:1.8rem; letter-spacing:-0.02em;'>◈ Seralung Finance</h1>", unsafe_allow_html=True)
+    st.markdown(f"<p style='color:{T['muted']}; font-size:0.85rem; margin-top:2px; margin-bottom:1.5rem;'>Your personal financial command centre</p>", unsafe_allow_html=True)
+ 
+st.markdown("---")
+ 
+# ─── Sidebar income inputs ────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown(f"<p style='color:{T['muted']}; font-size:0.75rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase;'>Monthly Income</p>", unsafe_allow_html=True)
+    primary_income = st.number_input("Primary salary (after tax)", min_value=0.0, value=5000.0, step=100.0, format="%.0f")
+    other_income = st.number_input("Other income", min_value=0.0, value=0.0, step=50.0, format="%.0f")
+    total_income = primary_income + other_income
+ 
+    st.markdown("---")
+    st.markdown(f"<p style='color:{T['muted']}; font-size:0.75rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase;'>Budget Rule</p>", unsafe_allow_html=True)
+    needs_pct = st.slider("Needs %", 0, 100, st.session_state.needs_pct, 1)
+    wants_pct = st.slider("Wants %", 0, 100, st.session_state.wants_pct, 1)
+    invest_pct = st.slider("Invest/Save %", 0, 100, st.session_state.invest_pct, 1)
+    total_pct = needs_pct + wants_pct + invest_pct
+    if total_pct != 100:
+        st.warning(f"Allocations sum to {total_pct}% (must be 100%)")
+    st.session_state.needs_pct = needs_pct
+    st.session_state.wants_pct = wants_pct
+    st.session_state.invest_pct = invest_pct
+ 
+    st.markdown("---")
+    st.markdown(f"<p style='color:{T['muted']}; font-size:0.75rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase;'>About</p>", unsafe_allow_html=True)
+    st.markdown(f"<p style='color:{T['muted']}; font-size:0.75rem; line-height:1.5;'>Seralung Finance is for educational purposes only. Not financial advice.</p>", unsafe_allow_html=True)
+ 
+# ─── Derived values ───────────────────────────────────────────────────────────
+total_expenses = sum(e["amount"] for e in st.session_state.expenses)
+investable = total_income * invest_pct / 100
+left_over = total_income - total_expenses
+needs_budget = total_income * needs_pct / 100
+wants_budget = total_income * wants_pct / 100
+ 
+# ─── Summary metrics ──────────────────────────────────────────────────────────
+m1, m2, m3, m4 = st.columns(4)
+m1.metric("Monthly Income", f"${total_income:,.0f}")
+m2.metric("Total Expenses", f"${total_expenses:,.0f}", delta=f"${total_expenses - total_income:,.0f}" if total_expenses > total_income else None, delta_color="inverse")
+m3.metric("Investable (target)", f"${investable:,.0f}", f"{invest_pct}% of income")
+m4.metric("Left Over", f"${left_over:,.0f}", delta=f"{'Surplus' if left_over >= 0 else 'Deficit'}", delta_color="normal" if left_over >= 0 else "inverse")
+ 
+st.markdown("<div style='margin-top:1.5rem'></div>", unsafe_allow_html=True)
+ 
+# ─── Tabs ─────────────────────────────────────────────────────────────────────
+tab_budget, tab_invest, tab_risk, tab_goals, tab_tax = st.tabs([
+    "📊 Budget", "📈 Invest", "🛡 Risk", "🎯 Goals", "🧾 Tax & FIRE"
+])
+ 
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 1 — BUDGET
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_budget:
+    col_exp, col_charts = st.columns([1, 1], gap="large")
+ 
+    with col_exp:
+        st.markdown(f"<div class='sf-card'><div class='sf-card-title'>Monthly Expenses</div>", unsafe_allow_html=True)
+ 
+        to_delete = None
+        for i, exp in enumerate(st.session_state.expenses):
+            c1, c2, c3 = st.columns([3, 2, 0.5])
+            with c1:
+                new_name = st.text_input(f"name_{i}", value=exp["name"], label_visibility="collapsed", key=f"ename_{i}")
+                st.session_state.expenses[i]["name"] = new_name
+            with c2:
+                new_amt = st.number_input(f"amt_{i}", value=float(exp["amount"]), min_value=0.0, step=10.0, label_visibility="collapsed", key=f"eamt_{i}", format="%.0f")
+                st.session_state.expenses[i]["amount"] = new_amt
+            with c3:
+                if st.button("✕", key=f"del_{i}", help="Remove"):
+                    to_delete = i
+ 
+        if to_delete is not None:
+            st.session_state.expenses.pop(to_delete)
+            st.rerun()
+ 
+        col_an, col_aa = st.columns(2)
+        with col_an:
+            new_exp_name = st.text_input("New category name", placeholder="e.g. Gym", key="new_exp_name")
+        with col_aa:
+            new_exp_amt = st.number_input("Amount ($)", min_value=0.0, step=10.0, key="new_exp_amt", format="%.0f")
+        if st.button("＋ Add expense", use_container_width=True):
+            if new_exp_name:
+                st.session_state.expenses.append({"name": new_exp_name, "amount": float(new_exp_amt)})
+                st.rerun()
+ 
+        st.markdown("</div>", unsafe_allow_html=True)
+ 
+    with col_charts:
+        # Bar chart: expenses by category
+        if st.session_state.expenses:
+            df_exp = pd.DataFrame(st.session_state.expenses)
+            df_exp = df_exp[df_exp["amount"] > 0].sort_values("amount", ascending=True)
+            fig_exp = go.Figure(go.Bar(
+                x=df_exp["amount"], y=df_exp["name"], orientation="h",
+                marker_color=T["chart_colors"][:len(df_exp)] if len(df_exp) <= len(T["chart_colors"]) else [T["accent"]] * len(df_exp),
+                text=[f"${v:,.0f}" for v in df_exp["amount"]],
+                textposition="outside",
+                textfont=dict(color=T["muted"], size=11),
+            ))
+            fig_exp.update_layout(**plot_layout("Spending by category", height=260))
+            fig_exp.update_xaxes(showgrid=True)
+            st.plotly_chart(fig_exp, use_container_width=True)
+ 
+        # Budget rule breakdown
+        st.markdown(f"<div class='sf-card'><div class='sf-card-title'>{needs_pct}/{wants_pct}/{invest_pct} Rule Snapshot</div>", unsafe_allow_html=True)
+        rows = [
+            ("Needs", needs_budget, T["accent"]),
+            ("Wants", wants_budget, T["accent2"]),
+            ("Invest / Save", investable, T["green"]),
+        ]
+        for label, budget, color in rows:
+            actual = total_expenses * (0.6 if label == "Needs" else 0.4) if label != "Invest / Save" else investable
+            pct = min(100, round(actual / budget * 100)) if budget > 0 else 0
+            badge_color = 'green' if pct <= 80 else 'amber' if pct <= 100 else 'red'
+            badge_text = '✓ On track' if pct <= 80 else '⚠ Near limit' if pct <= 100 else '✕ Over'
+            badge = f"<span class='sf-badge-{badge_color}'>{badge_text}</span>"
+            st.markdown(f"""
+            <div style='margin-bottom:10px;'>
+              <div style='display:flex;justify-content:space-between;margin-bottom:4px;font-size:0.8rem;color:{T["muted"]};'>
+                <span>{label} — ${actual:,.0f} / ${budget:,.0f}</span>{badge}
+              </div>
+              <div style='background:{T["surface2"]};border-radius:6px;height:7px;overflow:hidden;'>
+                <div style='width:{pct}%;height:100%;background:{T["red"] if pct > 100 else color};border-radius:6px;transition:width 0.4s;'></div>
+              </div>
+            </div>""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+ 
+        # Donut: expense breakdown
+        if st.session_state.expenses:
+            df_donut = pd.DataFrame(st.session_state.expenses)
+            df_donut = df_donut[df_donut["amount"] > 0]
+            fig_donut = go.Figure(go.Pie(
+                labels=df_donut["name"], values=df_donut["amount"],
+                hole=0.55,
+                marker=dict(colors=T["chart_colors"] * math.ceil(len(df_donut) / len(T["chart_colors"])),
+                            line=dict(color=T["bg"], width=2)),
+                textfont=dict(size=11, color=T["muted"]),
+                hovertemplate="%{label}<br>$%{value:,.0f}<br>%{percent}<extra></extra>",
+            ))
+            fig_donut.update_layout(**plot_layout("Expense distribution", height=260))
+            st.plotly_chart(fig_donut, use_container_width=True)
+ 
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 2 — INVEST
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_invest:
+    st.markdown(f"<div class='sf-tip'>Based on your {invest_pct}% savings rate, you have <strong>${investable:,.0f}/month</strong> to invest. Adjust your allocation below.</div>", unsafe_allow_html=True)
+ 
+    col_split, col_proj = st.columns([1, 1], gap="large")
+ 
+    with col_split:
+        st.markdown(f"<div class='sf-card'><div class='sf-card-title'>Investment split</div>", unsafe_allow_html=True)
+        em_pct = st.slider("🛟 Emergency fund", 0, 100, st.session_state.em_pct, 1)
+        idx_pct = st.slider("📦 Index funds (ETFs)", 0, 100, st.session_state.idx_pct, 1)
+        stk_pct = st.slider("📈 Individual stocks", 0, 100, st.session_state.stk_pct, 1)
+        cry_pct = st.slider("₿ Crypto", 0, 100, st.session_state.cry_pct, 1)
+        isum = em_pct + idx_pct + stk_pct + cry_pct
+        if isum != 100:
+            st.warning(f"Investment splits sum to {isum}% (must be 100%)")
+        st.session_state.em_pct = em_pct
+        st.session_state.idx_pct = idx_pct
+        st.session_state.stk_pct = stk_pct
+        st.session_state.cry_pct = cry_pct
+        st.markdown("</div>", unsafe_allow_html=True)
+ 
+        # Donut
+        labels = ["Emergency", "Index funds", "Stocks", "Crypto"]
+        values = [em_pct, idx_pct, stk_pct, cry_pct]
+        amounts = [investable * v / 100 for v in values]
+        fig_inv_donut = go.Figure(go.Pie(
+            labels=[f"{l} ${a:,.0f}/mo" for l, a in zip(labels, amounts)],
+            values=values, hole=0.55,
+            marker=dict(colors=[T["accent"], T["green"], T["amber"], T["red"]],
+                        line=dict(color=T["bg"], width=2)),
+            textfont=dict(size=11, color=T["muted"]),
+        ))
+        fig_inv_donut.update_layout(**plot_layout("Monthly allocation", height=260))
+        st.plotly_chart(fig_inv_donut, use_container_width=True)
+ 
+    with col_proj:
+        # 10-year projection
+        years = list(range(0, 11))
+ 
+        def compound(rate):
+            v, result = 0, []
+            for _ in years:
+                result.append(round(v))
+                v = (v + investable * 12) * (1 + rate)
+            return result
+ 
+        c_proj = compound(0.04)
+        m_proj = compound(0.07)
+        a_proj = compound(0.12)
+ 
+        fig_proj = go.Figure()
+        for proj, label, color, dash in [
+            (c_proj, "Conservative (4%)", T["accent"], "dot"),
+            (m_proj, "Moderate (7%)", T["green"], "solid"),
+            (a_proj, "Aggressive (12%)", T["amber"], "dash"),
+        ]:
+            fig_proj.add_trace(go.Scatter(
+                x=years, y=proj, name=label, mode="lines",
+                line=dict(color=color, width=2, dash=dash),
+                hovertemplate="Year %{x}<br>$%{y:,.0f}<extra></extra>",
+            ))
+        fig_proj.update_layout(**plot_layout("10-year growth projection", height=300))
+        fig_proj.update_yaxes(tickprefix="$", tickformat=",.0f")
+        fig_proj.update_xaxes(title_text="Year", tickvals=years)
+        st.plotly_chart(fig_proj, use_container_width=True)
+ 
+        # Projection table
+        st.markdown("<div class='sf-card'><div class='sf-card-title'>Year-by-year summary</div>", unsafe_allow_html=True)
+        for yr in [1, 3, 5, 10]:
+            st.markdown(f"""<div class='sf-proj-row'>
+              <span>Year {yr}</span>
+              <span style='color:{T["accent"]}'>${c_proj[yr]:,}</span>
+              <span style='color:{T["green"]}'>${m_proj[yr]:,}</span>
+              <span style='color:{T["amber"]}'>${a_proj[yr]:,}</span>
+            </div>""", unsafe_allow_html=True)
+        st.markdown(f"<div style='display:flex;justify-content:space-between;font-size:0.7rem;color:{T['muted']};padding-top:6px;'><span></span><span>Conservative</span><span>Moderate</span><span>Aggressive</span></div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+ 
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 3 — RISK
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_risk:
+    risk_profiles = {
+        "Conservative": {
+            "desc": "Capital preservation. Low volatility, stable returns. Suited to short time horizons or risk-averse investors.",
+            "alloc": {"Government bonds": 40, "Blue-chip stocks": 30, "REITs": 20, "Cash": 10},
+            "ret": (3, 5), "scenarios": (-5, 3, 8),
+            "colors": [T["accent"], T["green"], T["accent2"], T["muted"]],
+        },
+        "Moderate": {
+            "desc": "Balanced growth. Mix of equities and fixed income. Suited to medium-term goals (5–15 years).",
+            "alloc": {"Index funds": 50, "Growth stocks": 25, "Bonds": 15, "Crypto": 10},
+            "ret": (6, 9), "scenarios": (-15, 7, 18),
+            "colors": [T["green"], T["amber"], T["accent"], T["red"]],
+        },
+        "Aggressive": {
+            "desc": "Maximum growth. High volatility, high potential. Suited to long time horizons (15+ years) with risk tolerance.",
+            "alloc": {"Growth stocks": 40, "Crypto": 25, "Emerging markets": 20, "Options/Alts": 15},
+            "ret": (10, 20), "scenarios": (-35, 12, 45),
+            "colors": [T["amber"], T["red"], T["accent2"], T["muted"]],
+        },
+    }
+ 
+    r1, r2, r3 = st.columns(3)
+    for col, rname in zip([r1, r2, r3], risk_profiles.keys()):
+        with col:
+            rp = risk_profiles[rname]
+            selected = st.session_state.risk_profile == rname
+            border_style = f"2px solid {T['accent']}" if selected else f"1px solid {T['border']}"
+            bg_style = T["surface2"] if selected else T["surface"]
+            st.markdown(f"""
+            <div style='background:{bg_style};border:{border_style};border-radius:12px;padding:1rem;cursor:pointer;'>
+              <div style='font-weight:600;font-size:0.95rem;color:{T["text"]};margin-bottom:6px;'>{rname}</div>
+              <div style='font-size:0.78rem;color:{T["muted"]};line-height:1.5;'>{rp["desc"]}</div>
+              <div style='margin-top:10px;font-size:0.78rem;color:{T["accent"]};font-weight:600;'>Expected: {rp["ret"][0]}–{rp["ret"][1]}% p.a.</div>
+            </div>""", unsafe_allow_html=True)
+            if st.button(f"Select {rname}", key=f"risk_{rname}", use_container_width=True):
+                st.session_state.risk_profile = rname
+                st.rerun()
+ 
+    st.markdown("<div style='margin-top:1.5rem'></div>", unsafe_allow_html=True)
+    rp = risk_profiles[st.session_state.risk_profile]
+ 
+    col_alloc, col_scen = st.columns([1, 1], gap="large")
+ 
+    with col_alloc:
+        st.markdown(f"<div class='sf-card'><div class='sf-card-title'>Portfolio: {st.session_state.risk_profile}</div>", unsafe_allow_html=True)
+        for asset, pct in rp["alloc"].items():
+            amt = investable * pct / 100
+            st.markdown(f"""<div style='margin-bottom:10px;'>
+              <div style='display:flex;justify-content:space-between;font-size:0.8rem;color:{T["muted"]};margin-bottom:4px;'>
+                <span>{asset}</span><span>{pct}% — ${amt:,.0f}/mo</span>
+              </div>
+              <div style='background:{T["surface2"]};border-radius:5px;height:6px;'>
+                <div style='width:{pct}%;height:100%;background:{rp["colors"][list(rp["alloc"].keys()).index(asset)]};border-radius:5px;'></div>
+              </div>
+            </div>""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+ 
+        # Donut
+        fig_r_donut = go.Figure(go.Pie(
+            labels=list(rp["alloc"].keys()), values=list(rp["alloc"].values()),
+            hole=0.55, marker=dict(colors=rp["colors"], line=dict(color=T["bg"], width=2)),
+            textfont=dict(size=11, color=T["muted"]),
+        ))
+        fig_r_donut.update_layout(**plot_layout("Allocation breakdown", height=240))
+        st.plotly_chart(fig_r_donut, use_container_width=True)
+ 
+    with col_scen:
+        st.markdown(f"<div class='sf-card'><div class='sf-card-title'>Scenario analysis (10-year)</div>", unsafe_allow_html=True)
+        base = investable * 12 * 10
+        scen_data = [
+            ("🌧 Bear market", rp["scenarios"][0], T["red"], "red"),
+            ("⚖ Average", rp["scenarios"][1], T["amber"], "amber"),
+            ("☀ Bull market", rp["scenarios"][2], T["green"], "green"),
+        ]
+        for label, ret, color, badge_type in scen_data:
+            est = base * (1 + ret / 100)
+            st.markdown(f"""<div class='sf-proj-row'>
+              <span>{label}</span>
+              <span class='sf-badge-{badge_type}'>{ret:+}%</span>
+              <span style='color:{color};font-weight:600;'>${est:,.0f}</span>
+            </div>""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+ 
+        # Risk vs return bubble chart
+        bubble_data = [
+            {"asset": "Cash/Bonds", "risk": 5, "return": 2.5, "size": 16},
+            {"asset": "Index funds", "risk": 28, "return": 7, "size": 24},
+            {"asset": "Growth stocks", "risk": 52, "return": 12, "size": 20},
+            {"asset": "Crypto", "risk": 80, "return": 22, "size": 14},
+            {"asset": "REITs", "risk": 35, "return": 8, "size": 18},
+        ]
+        fig_bubble = go.Figure()
+        for i, d in enumerate(bubble_data):
+            fig_bubble.add_trace(go.Scatter(
+                x=[d["risk"]], y=[d["return"]],
+                mode="markers+text",
+                name=d["asset"],
+                text=[d["asset"]],
+                textposition="top center",
+                textfont=dict(size=10, color=T["muted"]),
+                marker=dict(size=d["size"] * 2, color=T["chart_colors"][i % len(T["chart_colors"])], opacity=0.8),
+            ))
+        fig_bubble.update_layout(**plot_layout("Risk vs. expected return", height=300))
+        fig_bubble.update_xaxes(title_text="Risk (volatility %)", range=[-5, 100])
+        fig_bubble.update_yaxes(title_text="Expected return %", ticksuffix="%", range=[-2, 30])
+        st.plotly_chart(fig_bubble, use_container_width=True)
+ 
+# ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — GOALS
-# ─────────────────────────────────────────
-with tabs[3]:
-    st.markdown('<p class="section-title">Goal Tracker</p>', unsafe_allow_html=True)
-
-    for goal_name, result, target, saved, monthly, target_dt in [
-        (g1_name, g1, g1_target, g1_saved, g1_monthly, g1_date),
-        (g2_name, g2, g2_target, g2_saved, g2_monthly, g2_date),
-    ]:
-        status_color = "#34d399" if result["on_track"] else "#f59e0b"
-        status_txt   = "✅ On Track" if result["on_track"] else "⚠️ Behind"
-        pct = result["pct"]
-        bar_cls = "green" if result["on_track"] else "yellow"
-
-        st.markdown(f"""
-        <div class="fin-card">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <span style="font-family:'DM Serif Display',serif; font-size:18px;">{goal_name}</span>
-            <span style="color:{status_color}; font-size:13px; font-weight:500;">{status_txt}</span>
-          </div>
-          <div style="display:flex; gap:32px; margin-bottom:14px;">
-            <div><div class="metric-label">Target</div><div style="font-size:18px;color:#e8e8f0;">${target:,.0f}</div></div>
-            <div><div class="metric-label">Saved</div><div style="font-size:18px;color:#34d399;">${saved:,.0f}</div></div>
-            <div><div class="metric-label">Required/mo</div><div style="font-size:18px;color:#818cf8;">${result['req_monthly']:,.0f}</div></div>
-            <div><div class="metric-label">Your Contrib</div><div style="font-size:18px;color:{'#34d399' if result['gap']>=0 else '#f87171'};">${monthly:,.0f}</div></div>
-            <div><div class="metric-label">Deadline</div><div style="font-size:18px;color:#e8e8f0;">{target_dt.strftime('%b %Y')}</div></div>
-          </div>
-          <div class="prog-wrap" style="height:12px;">
-            <div class="prog-fill {bar_cls}" style="width:{pct:.1f}%"></div>
-          </div>
-          <div style="font-size:11px;color:#6b6b8a;margin-top:4px;">{pct:.1f}% complete
-          {"  ·  Projected: " + result['projected'].strftime('%b %Y') if result['projected'] else ""}
-          </div>
-        </div>""", unsafe_allow_html=True)
-
-    # Scenario simulator
-    st.markdown('<p class="section-title">Scenario: If I invest more?</p>', unsafe_allow_html=True)
-    sim_col1, sim_col2 = st.columns(2)
-    sim_extra = sim_col1.slider("Extra monthly contribution ($)", 0, 2000, 200, 50)
-    sim_target = sim_col2.number_input("Target amount ($)", 1000, 2000000, g1_target, 1000)
-
-    sim_r = return_rate = inv_return / 12
-    bal   = g1_saved
-    months_base = months_extra = None
-    for m in range(1, 601):
-        bal = bal * (1 + sim_r) + g1_monthly
-        if bal >= sim_target and months_base is None:
-            months_base = m
-    bal = g1_saved
-    for m in range(1, 601):
-        bal = bal * (1 + sim_r) + g1_monthly + sim_extra
-        if bal >= sim_target and months_extra is None:
-            months_extra = m
-
-    if months_base and months_extra:
-        saved_months = months_base - months_extra
-        st.markdown(f"""
-        <div class="insight-card success">
-          💡 Adding <strong>${sim_extra:,.0f}/mo</strong> extra reaches ${sim_target:,.0f} in
-          <strong>{months_extra} months</strong> vs {months_base} months normally —
-          that's <strong>{saved_months} months faster</strong>
-          ({saved_months//12}y {saved_months%12}m earlier).
-        </div>""", unsafe_allow_html=True)
-
-# ─────────────────────────────────────────
-# TAB 5 — DEBT
-# ─────────────────────────────────────────
-with tabs[4]:
-    st.markdown('<p class="section-title">Debt Payoff Strategy</p>', unsafe_allow_html=True)
-
-    d1, d2, d3 = st.columns(3)
-    kpi(d1, "Total Debt",         f"${total_debt:,.0f}", "negative")
-    kpi(d2, "Avalanche Months",   str(payoff["avalanche"]["months"]))
-    kpi(d3, "Interest Saved",     f"${payoff['snowball']['interest'] - payoff['avalanche']['interest']:,.0f}", "positive")
-
-    col_av, col_sn = st.columns(2)
-    for col, strategy, result in [
-        (col_av, "🏔 Avalanche", payoff["avalanche"]),
-        (col_sn, "⛄ Snowball",  payoff["snowball"]),
-    ]:
-        yrs = result["months"] // 12
-        mos = result["months"] % 12
-        col.markdown(f"""
-        <div class="fin-card">
-          <div style="font-family:'DM Serif Display',serif;font-size:17px;margin-bottom:10px;">{strategy}</div>
-          <div style="margin-bottom:8px;">
-            <div class="metric-label">Payoff Time</div>
-            <div style="font-size:22px;color:#e8e8f0;">{yrs}y {mos}m</div>
-          </div>
-          <div>
-            <div class="metric-label">Total Interest Paid</div>
-            <div style="font-size:22px;color:#f87171;">${result['interest']:,.0f}</div>
-          </div>
-          <div style="font-size:11px;color:#6b6b8a;margin-top:10px;">
-            {"Highest interest first — saves most money" if "Avalanche" in strategy else "Smallest balance first — fastest wins"}
-          </div>
-        </div>""", unsafe_allow_html=True)
-
-    # Debt payoff timeline chart
-    debts_copy = [dict(d) for d in debts_list]
-    timeline_data = {"month": [], "Car Loan": [], "Credit Card": []}
-    balances = {d["name"]: d["balance"] for d in debts_list}
-    rates    = {d["name"]: d["rate"] for d in debts_list}
-    mins     = {d["name"]: d["min"] for d in debts_list}
-    av_order = sorted(debts_list, key=lambda x: -x["rate"])
-
-    for m in range(1, payoff["avalanche"]["months"] + 2):
-        timeline_data["month"].append(m)
-        timeline_data["Car Loan"].append(max(0, balances.get("Car Loan", 0)))
-        timeline_data["Credit Card"].append(max(0, balances.get("Credit Card", 0)))
-        rem_extra = extra_debt_pay
-        for d in av_order:
-            nm = d["name"]
-            if balances.get(nm, 0) <= 0: continue
-            i   = balances[nm] * rates[nm] / 12
-            balances[nm] = max(0, balances[nm] + i - mins[nm])
-        for d in av_order:
-            nm = d["name"]
-            if balances.get(nm, 0) > 0 and rem_extra > 0:
-                pay = min(rem_extra, balances[nm])
-                balances[nm] -= pay; rem_extra -= pay; break
-
-    fig_debt = go.Figure()
-    fig_debt.add_trace(go.Scatter(
-        x=timeline_data["month"], y=timeline_data["Car Loan"],
-        name="Car Loan", fill="tozeroy",
-        line=dict(color=YELLOW), fillcolor="rgba(251,191,36,0.1)"))
-    fig_debt.add_trace(go.Scatter(
-        x=timeline_data["month"], y=timeline_data["Credit Card"],
-        name="Credit Card", fill="tozeroy",
-        line=dict(color=RED), fillcolor="rgba(248,113,113,0.1)"))
-    dark_layout(fig_debt, "Debt Elimination Timeline (Avalanche Method)", 300)
-    fig_debt.update_layout(xaxis_title="Months", yaxis_title="Balance ($)", yaxis_tickformat="$,.0f")
-    st.plotly_chart(fig_debt, use_container_width=True, config={"displayModeBar": False})
-
-# ─────────────────────────────────────────
-# TAB 6 — BUSINESS EARNINGS
-# ─────────────────────────────────────────
-with tabs[5]:
-    st.markdown('<p class="section-title">Realistic Business Earnings</p>', unsafe_allow_html=True)
-    st.markdown('<div class="insight-card">All figures are conservative → realistic. No hype. Based on real market data for 1-person operations in AU/US.</div>', unsafe_allow_html=True)
-
-    biz_type = st.selectbox("Business Model", ["Freelance", "SaaS", "E-Commerce", "Agency"])
-
-    if biz_type == "Freelance":
-        b1, b2, b3 = st.columns(3)
-        fl_rate = b1.number_input("Hourly Rate ($)", 30, 500, 110, 5)
-        fl_hrs  = b2.slider("Target Hrs/Week", 5, 40, 30)
-        fl_util = b3.slider("Utilization (%)", 30, 95, 68) / 100
-        fl_oh   = b1.number_input("Monthly Overhead ($)", 0, 5000, 600, 50)
-        fl_tax  = b2.slider("Tax Rate (%)", 10, 50, 32) / 100
-
-        fl = biz_freelance(fl_rate, fl_hrs, fl_util, fl_oh, fl_tax)
-        fc1, fc2, fc3, fc4 = st.columns(4)
-        kpi(fc1, "Annual Gross",    f"${fl['gross']:,.0f}")
-        kpi(fc2, "Annual Net",      f"${fl['net']:,.0f}", "positive")
-        kpi(fc3, "Monthly Net",     f"${fl['monthly']:,.0f}", "positive")
-        kpi(fc4, "Effective Hourly",f"${fl['eff_hourly']:,.0f}", "accent")
-
-        # utilization sensitivity chart
-        utils = [0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-        nets  = [biz_freelance(fl_rate, fl_hrs, u, fl_oh, fl_tax)["net"] for u in utils]
-        fig_fl = go.Figure(go.Bar(
-            x=[f"{int(u*100)}%" for u in utils], y=nets,
-            marker_color=[ACCENT if u == fl_util else GRID_COLOR for u in utils],
-            text=[f"${v:,.0f}" for v in nets], textposition="outside",
-            textfont=dict(color=TEXT_COLOR, size=11),
-        ))
-        dark_layout(fig_fl, "Annual Net Income by Utilization Rate", 280)
-        fig_fl.update_layout(yaxis_tickformat="$,.0f")
-        st.plotly_chart(fig_fl, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(f'<div class="insight-card warning">⚠️ At {int(fl_util*100)}% utilization you bill {fl["billed_hrs"]:,} hours/year. Year 1 freelancers often hit 50–60% utilization while building a client base.</div>', unsafe_allow_html=True)
-
-    elif biz_type == "SaaS":
-        s1, s2 = st.columns(2)
-        s_price = s1.number_input("Monthly Price/User ($)", 5, 500, 49, 1)
-        s_churn = s2.slider("Monthly Churn (%)", 1.0, 15.0, 5.0, 0.5) / 100
-        s_cogs  = s1.slider("COGS (% of revenue)", 5, 50, 18) / 100
-        s_fixed = s2.number_input("Fixed Annual Costs ($)", 0, 200000, 36000, 1000)
-        s_cac   = s1.number_input("CAC per Customer ($)", 0, 2000, 200, 10)
-        sc1, sc2, sc3 = st.columns(3)
-        s_y1 = sc1.number_input("Customers Y1", 1, 10000, 50, 5)
-        s_y2 = sc2.number_input("Customers Y2", 1, 10000, 180, 10)
-        s_y3 = sc3.number_input("Customers Y3", 1, 10000, 450, 25)
-
-        saas = biz_saas(s_price, [s_y1, s_y2, s_y3], s_churn, s_cogs, s_fixed, s_cac)
-        fig_s = go.Figure()
-        fig_s.add_trace(go.Bar(x=["Year 1","Year 2","Year 3"],
-                               y=[r["arr"] for r in saas], name="ARR",
-                               marker_color=ACCENT))
-        fig_s.add_trace(go.Bar(x=["Year 1","Year 2","Year 3"],
-                               y=[r["net_profit"] for r in saas], name="Net Profit",
-                               marker_color=[GREEN if r["net_profit"]>=0 else RED for r in saas]))
-        dark_layout(fig_s, "SaaS Revenue & Profitability", 300)
-        fig_s.update_layout(barmode="group", yaxis_tickformat="$,.0f")
-        st.plotly_chart(fig_s, use_container_width=True, config={"displayModeBar": False})
-        for r in saas:
-            profit_color = "positive" if r["net_profit"] >= 0 else "negative"
-            st.markdown(f"""
-            <div class="fin-card" style="display:inline-block; width:30%; margin-right:2%;">
-              <div class="metric-label">Year {r['year']}</div>
-              <div style="font-size:13px; color:#9090b0;">Customers: <strong style="color:#e8e8f0">{r['customers']}</strong></div>
-              <div style="font-size:13px; color:#9090b0;">MRR: <strong style="color:{ACCENT}">${r['mrr']:,.0f}</strong></div>
-              <div style="font-size:13px; color:#9090b0;">Net: <strong style="color:{'#34d399' if r['net_profit']>=0 else '#f87171'}">${r['net_profit']:+,.0f}</strong></div>
-            </div>""", unsafe_allow_html=True)
-        ann_churn = 1 - (1 - s_churn) ** 12
-        st.markdown(f'<div class="insight-card {"danger" if ann_churn > 0.4 else "warning"}">📉 {s_churn*100:.1f}% monthly churn = <strong>{ann_churn*100:.0f}% annual churn</strong>. {"This is critically high — focus on retention above all." if ann_churn > 0.5 else "Aim below 3% monthly for sustainable growth."}</div>', unsafe_allow_html=True)
-
-    elif biz_type == "E-Commerce":
-        e1, e2, e3 = st.columns(3)
-        e_aov  = e1.number_input("Avg Order Value ($)", 10, 1000, 75, 5)
-        e_cogs = e2.slider("COGS (%)", 10, 80, 38) / 100
-        e_ads  = e3.number_input("Monthly Ad Spend ($)", 0, 20000, 1200, 100)
-        ea1, ea2, ea3 = st.columns(3)
-        e_y1 = ea1.number_input("Monthly Orders Y1", 1, 5000, 80, 5)
-        e_y2 = ea2.number_input("Monthly Orders Y2", 1, 5000, 220, 10)
-        e_y3 = ea3.number_input("Monthly Orders Y3", 1, 5000, 500, 25)
-
-        ecom = biz_ecom(e_aov, [e_y1, e_y2, e_y3], e_cogs, 0.08, e_ads)
-        fig_e = go.Figure()
-        fig_e.add_trace(go.Bar(x=["Year 1","Year 2","Year 3"],
-                               y=[r["gross_revenue"] for r in ecom], name="Gross Revenue", marker_color=ACCENT))
-        fig_e.add_trace(go.Bar(x=["Year 1","Year 2","Year 3"],
-                               y=[r["gross_profit"] for r in ecom], name="Gross Profit", marker_color=GREEN))
-        fig_e.add_trace(go.Bar(x=["Year 1","Year 2","Year 3"],
-                               y=[r["net_profit"] for r in ecom], name="Net Profit",
-                               marker_color=[GREEN if r["net_profit"]>=0 else RED for r in ecom]))
-        dark_layout(fig_e, "E-Commerce P&L", 300)
-        fig_e.update_layout(barmode="group", yaxis_tickformat="$,.0f")
-        st.plotly_chart(fig_e, use_container_width=True, config={"displayModeBar": False})
-
-    elif biz_type == "Agency":
-        ag1, ag2, ag3 = st.columns(3)
-        a_ret = ag1.number_input("Monthly Retainer/Client ($)", 500, 20000, 3500, 250)
-        a_oh  = ag2.number_input("Monthly Overhead ($)", 0, 10000, 1800, 100)
-        a_st  = ag3.number_input("Staff Cost ($/mo)", 0, 50000, 0, 500)
-        ag4, ag5, ag6 = st.columns(3)
-        a_y1 = ag4.number_input("Clients Y1", 1, 50, 4, 1)
-        a_y2 = ag5.number_input("Clients Y2", 1, 100, 8, 1)
-        a_y3 = ag6.number_input("Clients Y3", 1, 200, 14, 1)
-
-        agency = biz_agency(a_ret, [a_y1, a_y2, a_y3], a_oh, a_st)
-        fig_ag = go.Figure()
-        fig_ag.add_trace(go.Bar(x=["Year 1","Year 2","Year 3"],
-                                y=[r["revenue"] for r in agency], name="Revenue", marker_color=ACCENT))
-        fig_ag.add_trace(go.Bar(x=["Year 1","Year 2","Year 3"],
-                                y=[r["net_profit"] for r in agency], name="Net Profit",
-                                marker_color=[GREEN if r["net_profit"]>=0 else RED for r in agency]))
-        dark_layout(fig_ag, "Agency Revenue & Profit", 300)
-        fig_ag.update_layout(barmode="group", yaxis_tickformat="$,.0f")
-        st.plotly_chart(fig_ag, use_container_width=True, config={"displayModeBar": False})
-        biggest = agency[-1]["revenue"] / max(a_y3 * (1-0.28/2), 1)
-        st.markdown(f'<div class="insight-card warning">⚠️ If your top client ({int(100/max(a_y1,1))}% of revenue) leaves, that could be a ${biggest:,.0f}/year revenue hit. Aim for no single client over 20% of total revenue.</div>', unsafe_allow_html=True)
-
-# ─────────────────────────────────────────
-# TAB 7 — RETIREMENT
-# ─────────────────────────────────────────
-with tabs[6]:
-    st.markdown('<p class="section-title">Retirement & Financial Independence</p>', unsafe_allow_html=True)
-
-    r1, r2, r3, r4 = st.columns(4)
-    kpi(r1, "Super at Retirement",    f"${super_proj['balance']:,.0f}", "positive")
-    kpi(r2, "Monthly from Super",     f"${super_proj['monthly_4pct']:,.0f}/mo", "accent")
-    kpi(r3, "FI Number (4% rule)",    f"${fi['fi_number']:,.0f}")
-    kpi(r4, "Years to FI",            str(fi["years"]))
-
-    # Super growth chart
-    super_rows = []
-    sup_bal = super_balance
-    yrs_to_ret = super_proj["years"]
-    annual_sg_contrib = (gross_income * SUPER_SG + super_vol) * 0.85  # after 15% tax
-    for yr in range(1, yrs_to_ret + 1):
-        sup_bal = sup_bal * (1 + inv_return) + annual_sg_contrib
-        super_rows.append({"year": age + yr, "balance": round(sup_bal, 2)})
-
-    fig_sup = go.Figure()
-    fig_sup.add_trace(go.Scatter(
-        x=[r["year"] for r in super_rows],
-        y=[r["balance"] for r in super_rows],
-        fill="tozeroy", name="Super Balance",
-        line=dict(color=GREEN, width=2.5),
-        fillcolor="rgba(52,211,153,0.08)",
-    ))
-    dark_layout(fig_sup, f"Superannuation Growth to Age {ret_age}", 280)
-    fig_sup.update_layout(xaxis_title="Age", yaxis_title="Balance ($)", yaxis_tickformat="$,.0f")
-    st.plotly_chart(fig_sup, use_container_width=True, config={"displayModeBar": False})
-
-    # FI progress
-    st.markdown('<p class="section-title">Financial Independence Progress</p>', unsafe_allow_html=True)
-    fi_pct = min(100, fi["pct"])
-    bar_col = "green" if fi_pct >= 50 else "yellow" if fi_pct >= 25 else "red"
-    st.markdown(f"""
-    <div class="fin-card">
-      <div style="display:flex; justify-content:space-between; margin-bottom:8px;">
-        <span style="font-size:14px; color:#9090b0;">FI Progress</span>
-        <span style="font-size:14px; color:#e8e8f0;">${net_worth:,.0f} / ${fi['fi_number']:,.0f}</span>
-      </div>
-      <div class="prog-wrap" style="height:16px;">
-        <div class="prog-fill {bar_col}" style="width:{fi_pct:.1f}%"></div>
-      </div>
-      <div style="font-size:12px; color:#6b6b8a; margin-top:6px;">{fi_pct:.1f}% to Financial Independence
-        {" · FI at age " + str(age + fi['years']) if isinstance(fi['years'], int) else ""}
-      </div>
-    </div>""", unsafe_allow_html=True)
-
-    # Compound table
-    st.markdown('<p class="section-title">Compound Growth: Every $1,000/yr Extra Invested</p>', unsafe_allow_html=True)
-    rows_c = []
-    for extra_k in [1000, 3000, 5000, 10000, 20000]:
-        bal = 0
-        for _ in range(yrs_to_ret):
-            bal = bal * (1 + inv_return) + extra_k
-        rows_c.append({"Extra/yr": f"${extra_k:,}", "Value at Retirement": f"${bal:,.0f}",
-                        "Total Contributed": f"${extra_k*yrs_to_ret:,}",
-                        "Pure Growth": f"${bal - extra_k*yrs_to_ret:,.0f}"})
-    import pandas as pd
-    st.dataframe(
-        pd.DataFrame(rows_c).style.hide(axis="index"),
-        use_container_width=True
-    )
-
-    st.markdown(f'<div class="insight-card success">💡 Your super is projected at <strong>${super_proj["balance"]:,.0f}</strong> at age {ret_age}. Under the 4% withdrawal rule, that\'s <strong>${super_proj["monthly_4pct"]:,.0f}/month</strong> — adjust the sidebar sliders to model different scenarios.</div>', unsafe_allow_html=True)
-
-# ── FOOTER ───────────────────────────────────────────────────────────
-st.markdown("""
-<div style="text-align:center; padding: 40px 0 20px; color:#2a2a42; font-size:11px; letter-spacing:0.08em;">
-  FINORA FINANCIAL ENGINE · NOT FINANCIAL ADVICE · FOR EDUCATIONAL USE ONLY
-</div>""", unsafe_allow_html=True)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_goals:
+    g1, g2, g3 = st.columns(3)
+    g1.metric("Monthly investable", f"${investable:,.0f}")
+    g2.metric("1-year savings", f"${investable * 12:,.0f}")
+    five_year = investable * 12 * ((pow(1 + 0.07 / 12, 60) - 1) / (0.07 / 12))
+    g3.metric("5-year (7% growth)", f"${five_year:,.0f}")
+ 
+    st.markdown("<div style='margin-top:1.5rem'></div>", unsafe_allow_html=True)
+ 
+    # Add goal
+    with st.expander("＋ Add a financial goal", expanded=not st.session_state.goals):
+        gc1, gc2, gc3 = st.columns([2, 1, 1])
+        with gc1:
+            goal_name = st.text_input("Goal name", placeholder="House deposit, Car, Holiday…")
+        with gc2:
+            goal_amount = st.number_input("Target ($)", min_value=0.0, step=1000.0, format="%.0f")
+        with gc3:
+            goal_saved = st.number_input("Already saved ($)", min_value=0.0, step=100.0, format="%.0f")
+        if st.button("Add goal →", use_container_width=True):
+            if goal_name and goal_amount > 0:
+                st.session_state.goals.append({"name": goal_name, "amount": goal_amount, "saved": goal_saved})
+                st.rerun()
+ 
+    # Display goals
+    if st.session_state.goals:
+        for i, g in enumerate(st.session_state.goals):
+            remaining = max(0, g["amount"] - g["saved"])
+            months = math.ceil(remaining / investable) if investable > 0 else float("inf")
+            years = months / 12
+            pct = min(100, round(g["saved"] / g["amount"] * 100)) if g["amount"] > 0 else 0
+            col_g, col_del = st.columns([10, 1])
+            with col_g:
+                st.markdown(f"""<div class='sf-card'>
+                  <div style='display:flex;justify-content:space-between;margin-bottom:8px;'>
+                    <span style='font-weight:600;font-size:0.95rem;color:{T["text"]}'>{g["name"]}</span>
+                    <span style='font-size:0.8rem;color:{T["muted"]};'>${g["amount"]:,.0f} target</span>
+                  </div>
+                  <div style='font-size:0.8rem;color:{T["muted"]};margin-bottom:8px;'>
+                    ${g["saved"]:,.0f} saved · ${remaining:,.0f} remaining · 
+                    <span style='color:{T["accent"]};'>{years:.1f} years ({months} months) at current rate</span>
+                  </div>
+                  <div style='background:{T["surface2"]};border-radius:6px;height:8px;'>
+                    <div style='width:{pct}%;height:100%;background:{T["green"]};border-radius:6px;'></div>
+                  </div>
+                  <div style='font-size:0.75rem;color:{T["muted"]};margin-top:4px;'>{pct}% complete</div>
+                </div>""", unsafe_allow_html=True)
+            with col_del:
+                if st.button("✕", key=f"goal_del_{i}"):
+                    st.session_state.goals.pop(i)
+                    st.rerun()
+    else:
+        st.markdown(f"<div style='text-align:center;padding:3rem;color:{T['muted']};font-size:0.9rem;'>No goals yet — add one above to track your progress.</div>", unsafe_allow_html=True)
+ 
+    # Goals timeline chart
+    if st.session_state.goals and investable > 0:
+        goal_labels = [g["name"] for g in st.session_state.goals]
+        goal_months = [math.ceil(max(0, g["amount"] - g["saved"]) / investable) for g in st.session_state.goals]
+        fig_goals = go.Figure(go.Bar(
+            x=goal_months, y=goal_labels, orientation="h",
+            marker_color=T["chart_colors"][:len(goal_labels)],
+            text=[f"{m} months" for m in goal_months], textposition="outside",
+            textfont=dict(color=T["muted"], size=11),
+        ))
+        fig_goals.update_layout(**plot_layout("Time to reach each goal (months)", height=max(200, len(goal_labels) * 60)))
+        fig_goals.update_xaxes(title_text="Months", showgrid=True)
+        st.plotly_chart(fig_goals, use_container_width=True)
+ 
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 5 — TAX & FIRE
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_tax:
+    col_tax, col_fire = st.columns([1, 1], gap="large")
+ 
+    with col_tax:
+        st.markdown(f"<div class='sf-card'><div class='sf-card-title'>Australian Tax Estimator (FY2024–25)</div>", unsafe_allow_html=True)
+        gross_income = st.number_input("Annual gross income ($)", min_value=0.0, value=primary_income * 12, step=1000.0, format="%.0f")
+        include_medicare = st.checkbox("Include Medicare levy (2%)", value=True)
+ 
+        # ATO 2024-25 brackets
+        def calc_tax(income):
+            brackets = [(18200, 0, 0), (45000, 0.19, 0), (120000, 0.325, 5092), (180000, 0.37, 29467), (float("inf"), 0.45, 51667)]
+            for threshold, rate, base in reversed(brackets):
+                if income > threshold:
+                    prev = [(18200, 0, 0), (45000, 0.19, 0), (120000, 0.325, 5092), (180000, 0.37, 29467)]
+                    prev_thresh = [b[0] for b in prev if b[0] < threshold]
+                    prev_thresh = max(prev_thresh) if prev_thresh else 0
+                    return base + (income - threshold) * rate
+            return 0
+ 
+        tax = calc_tax(gross_income)
+        medicare = gross_income * 0.02 if include_medicare else 0
+        lmito = max(0, min(1500, (gross_income - 37000) * 0.075)) if gross_income > 37000 else 0
+        total_tax = max(0, tax + medicare - lmito)
+        net = gross_income - total_tax
+        eff_rate = (total_tax / gross_income * 100) if gross_income > 0 else 0
+ 
+        tax_items = [
+            ("Gross income", f"${gross_income:,.0f}", T["text"]),
+            ("Income tax", f"-${tax:,.0f}", T["red"]),
+            ("Medicare levy", f"-${medicare:,.0f}", T["amber"]),
+            ("LMITO offset", f"+${lmito:,.0f}", T["green"]),
+            ("Total tax", f"-${total_tax:,.0f}", T["red"]),
+            ("Net income (annual)", f"${net:,.0f}", T["accent"]),
+            ("Net income (monthly)", f"${net/12:,.0f}", T["accent"]),
+            ("Effective tax rate", f"{eff_rate:.1f}%", T["amber"]),
+        ]
+        for label, value, color in tax_items:
+            is_last = label in ("Net income (annual)", "Net income (monthly)", "Effective tax rate")
+            st.markdown(f"""<div style='display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid {T["border"]};font-size:0.85rem;{"font-weight:600;" if is_last else ""}'>
+              <span style='color:{T["muted"]}'>{label}</span>
+              <span style='color:{color}'>{value}</span>
+            </div>""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+ 
+    with col_fire:
+        st.markdown(f"<div class='sf-card'><div class='sf-card-title'>FIRE Calculator (Financial Independence)</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='font-size:0.78rem;color:{T['muted']};margin-bottom:1rem;line-height:1.5;'>FIRE = save 25× your annual expenses. The 4% rule lets you withdraw 4% annually without depleting your portfolio.</div>", unsafe_allow_html=True)
+ 
+        annual_expenses = st.number_input("Annual living expenses ($)", min_value=0.0, value=total_expenses * 12, step=500.0, format="%.0f", key="fire_exp")
+        current_portfolio = st.number_input("Current portfolio value ($)", min_value=0.0, value=0.0, step=1000.0, format="%.0f")
+        fire_target = annual_expenses * 25
+        gap = max(0, fire_target - current_portfolio)
+        monthly_to_fire = investable
+ 
+        fire_items = [
+            ("Annual expenses", f"${annual_expenses:,.0f}"),
+            ("FIRE number (25×)", f"${fire_target:,.0f}"),
+            ("Current portfolio", f"${current_portfolio:,.0f}"),
+            ("Gap remaining", f"${gap:,.0f}"),
+        ]
+        for label, value in fire_items:
+            st.markdown(f"""<div style='display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid {T["border"]};font-size:0.85rem;'>
+              <span style='color:{T["muted"]}'>{label}</span>
+              <span style='color:{T["text"]};font-weight:500;'>{value}</span>
+            </div>""", unsafe_allow_html=True)
+ 
+        fire_pct = min(100, round(current_portfolio / fire_target * 100)) if fire_target > 0 else 0
+        st.markdown(f"""<div style='margin:1rem 0 0.4rem;font-size:0.8rem;color:{T["muted"]};'>FIRE progress: {fire_pct}%</div>
+        <div style='background:{T["surface2"]};border-radius:6px;height:10px;'>
+          <div style='width:{fire_pct}%;height:100%;background:{T["green"]};border-radius:6px;'></div>
+        </div>""", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+ 
+        # FIRE timeline projection
+        if monthly_to_fire > 0 and fire_target > 0:
+            years_to_fire = list(range(0, 41))
+            portfolio_vals_fire = []
+            v = current_portfolio
+            yr_target = None
+            for yr in years_to_fire:
+                portfolio_vals_fire.append(round(v))
+                if v >= fire_target and yr_target is None:
+                    yr_target = yr
+                v = (v + monthly_to_fire * 12) * 1.07
+ 
+            fig_fire = go.Figure()
+            fig_fire.add_trace(go.Scatter(
+                x=years_to_fire, y=portfolio_vals_fire,
+                name="Portfolio (7% growth)", mode="lines",
+                line=dict(color=T["green"], width=2),
+                fill="tozeroy", fillcolor=T["green"] + "22",
+                hovertemplate="Year %{x}<br>$%{y:,.0f}<extra></extra>",
+            ))
+            fig_fire.add_hline(y=fire_target, line_dash="dot", line_color=T["amber"],
+                               annotation_text=f"FIRE target ${fire_target:,.0f}", annotation_font_color=T["amber"])
+            fig_fire.update_layout(**plot_layout("Path to FIRE", height=280))
+            fig_fire.update_yaxes(tickprefix="$", tickformat=",.0f")
+            fig_fire.update_xaxes(title_text="Years from now")
+            st.plotly_chart(fig_fire, use_container_width=True)
+ 
+            if yr_target is not None:
+                st.markdown(f"<div class='sf-tip'>🎯 At your current savings rate, you could reach FIRE in approximately <strong>{yr_target} years</strong>.</div>", unsafe_allow_html=True)
+            else:
+                st.markdown(f"<div class='sf-tip'>⚠ At your current rate, you may not reach FIRE within 40 years. Try increasing your savings rate above.</div>", unsafe_allow_html=True)
+ 
+# ─── Footer ───────────────────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown(f"<p style='text-align:center;color:{T['muted']};font-size:0.72rem;'>◈ Seralung Finance — Educational purposes only. Not financial advice. Always consult a qualified financial adviser.</p>", unsafe_allow_html=True)
