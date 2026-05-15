@@ -787,9 +787,9 @@ with tabs[2]:
         st.markdown("<div class='sf-card'><div class='sf-card-title'>Milestones</div>", unsafe_allow_html=True)
         for yr in [1,3,5,10,15,20]:
             st.markdown(f"<div class='sf-row'><span>Year {yr}</span>"
-                        f"<span style='color:{T[\"blue\"]}'>{fmt(c_p[yr])}</span>"
-                        f"<span style='color:{T[\"green\"]}'>{fmt(m_p[yr])}</span>"
-                        f"<span style='color:{T[\"amber\"]}'>{fmt(a_p[yr])}</span></div>", unsafe_allow_html=True)
+                        f"<span style='color:{T['blue']}'>{fmt(c_p[yr])}</span>"
+                        f"<span style='color:{T['green']}'>{fmt(m_p[yr])}</span>"
+                        f"<span style='color:{T['amber']}'>{fmt(a_p[yr])}</span></div>", unsafe_allow_html=True)
         st.markdown(f"<div style='display:flex;justify-content:space-between;font-size:0.63rem;color:{T['muted']};padding-top:6px;'><span></span><span>Conservative</span><span>Moderate</span><span>Aggressive</span></div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -948,7 +948,7 @@ with tabs[4]:
             st.markdown("<div class='sf-card'><div class='sf-card-title'>Strategy Comparison</div>", unsafe_allow_html=True)
             for nm,mo,interest,col_ in [("🏔 Avalanche",av_mo,av_int,T["green"]),("⛄ Snowball",sb_mo,sb_int,T["blue"])]:
                 st.markdown(f"<div class='sf-row'><span style='color:{col_};font-weight:600;'>{nm}</span>"
-                            f"<span>{mo} months ({mo/12:.1f} yrs)</span><span style='color:{T[\"red\"]};'>Int: {fmt(interest)}</span></div>", unsafe_allow_html=True)
+                            f"<span>{mo} months ({mo/12:.1f} yrs)</span><span style='color:{T['red']};'>Int: {fmt(interest)}</span></div>", unsafe_allow_html=True)
             diff=abs(sb_int-av_int)
             if diff>0: st.markdown(f"<div style='margin-top:8px;font-size:0.81rem;color:{T['green']};'>Avalanche saves <strong>{fmt(diff)}</strong> in interest</div>", unsafe_allow_html=True)
             st.markdown("</div>", unsafe_allow_html=True)
@@ -996,7 +996,7 @@ with tabs[5]:
                         f"<span class='sf-badge-{pb}' style='margin-left:8px;'>{g['priority']}</span></div>"
                         f"<span style='font-size:0.78rem;color:{T['muted']};'>Target: {fmt(g['amount'])}</span></div>"
                         f"<div style='font-size:0.78rem;color:{T['muted']};margin-bottom:10px;'>{fmt(g['saved'])} saved · {fmt(rem)} remaining · "
-                        f"<span style='color:{T[\"accent\"]};'>{yr_g:.1f} yrs ({mo} mo) at current rate</span></div>"
+                        f"<span style='color:{T['accent']};'>{yr_g:.1f} yrs ({mo} mo) at current rate</span></div>"
                         f"<div style='background:{T['surface2']};border-radius:6px;height:9px;margin-bottom:4px;'>"
                         f"<div style='width:{pct_g}%;height:100%;background:{pc};border-radius:6px;'></div></div>"
                         f"<div style='font-size:0.7rem;color:{T['muted']};'>{pct_g}% complete</div></div>", unsafe_allow_html=True)
