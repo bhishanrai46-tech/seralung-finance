@@ -544,9 +544,9 @@ with t1:
             mode="gauge+number",value=hs,
             number=dict(font=dict(size=36,color=T["accent"],family="DM Sans"),suffix="/100"),
             gauge=dict(
-                axis=dict(range=[0,100],tickwidth=0,tickcolor="transparent",tickvals=[],showticklabels=False),
+                axis=dict(range=[0,100],tickwidth=0,tickcolor="rgba(0,0,0,0)",tickvals=[],showticklabels=False),
                 bar=dict(color=T["accent"],thickness=0.25),
-                bgcolor="transparent",borderwidth=0,
+                bgcolor="rgba(0,0,0,0)",borderwidth=0,
                 steps=[
                     dict(range=[0,35],  color=h2rgba(T["red"],0.18)),
                     dict(range=[35,50], color=h2rgba(T["amber"],0.15)),
@@ -835,7 +835,7 @@ with t3:
             gauge=dict(
                 axis=dict(range=[0,100],tickwidth=0,tickvals=[],showticklabels=False),
                 bar=dict(color=risk_c,thickness=0.28),
-                bgcolor="transparent",borderwidth=0,
+                bgcolor="rgba(0,0,0,0)",borderwidth=0,
                 steps=[
                     dict(range=[0,33],color=h2rgba(T["green"],0.2)),
                     dict(range=[33,67],color=h2rgba(T["amber"],0.15)),
