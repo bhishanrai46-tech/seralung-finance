@@ -26,6 +26,12 @@ try:
 except ImportError:
     PDF_OK = False
 
+try:
+    from db import init_supabase, get_user, restore_session, load_user_data, save_user_data, login_page, logout
+    AUTH_ENABLED = True
+except ImportError:
+    AUTH_ENABLED = False
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────────────────────────────────────
@@ -263,6 +269,25 @@ def generate_csv_report(period="Monthly"):
     return buf.getvalue().encode("utf-8")
 
 # ─────────────────────────────────────────────────────────────────────────────
+# SUPABASE AUTH GATE
+# ─────────────────────────────────────────────────────────────────────────────
+if AUTH_ENABLED:
+    sb = init_supabase()
+    # Restore session from stored tokens (survives page refresh in same tab)
+    if not get_user():
+        restore_session(sb)
+    # Show login page if still not authenticated
+    if not get_user():
+        # Need a temporary T for login page styling — use default theme
+        _T = list(THEMES.values())[0]
+        login_page(sb, _T)
+        st.stop()
+    # First load after login: pull saved data from Supabase
+    if not st.session_state.get("data_loaded"):
+        load_user_data(sb)
+        st.session_state["data_loaded"] = True
+
+# ─────────────────────────────────────────────────────────────────────────────
 # SIDEBAR
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -270,9 +295,23 @@ with st.sidebar:
     theme_name = st.selectbox("Theme", list(THEMES.keys()), index=0)
     T = THEMES[theme_name]
     st.divider()
+    if AUTH_ENABLED and get_user():
+        user = get_user()
+        st.markdown(f"**{user.email}**")
+        sc1, sc2 = st.columns(2)
+        with sc1:
+            if st.button("Save data", use_container_width=True):
+                if save_user_data(sb):
+                    st.success("Saved!")
+        with sc2:
+            if st.button("Sign out", use_container_width=True):
+                logout(sb)
+        st.divider()
     st.caption("Version Premium")
-    if st.button("Reset data", use_container_width=True):
-        for k in list(st.session_state.keys()): del st.session_state[k]
+    if st.button("Reset to demo data", use_container_width=True):
+        keys_to_clear = [k for k in st.session_state.keys()
+                         if k not in ("sb_user","sb_access_token","sb_refresh_token","sb_client","data_loaded")]
+        for k in keys_to_clear: del st.session_state[k]
         st.rerun()
     st.caption("Educational use only. Not financial advice.")
 
@@ -799,8 +838,15 @@ with t2:
         st.markdown("</div>",unsafe_allow_html=True)
 
         # CSV export
-        st.download_button("Download CSV Report",data=generate_csv_report(),
-            file_name=f"seralung_{datetime.now().strftime('%Y-%m-%d')}.csv",mime="text/csv",use_container_width=True)
+        dl_col, sv_col = st.columns(2)
+        with dl_col:
+            st.download_button("Download CSV",data=generate_csv_report(),
+                file_name=f"seralung_{datetime.now().strftime('%Y-%m-%d')}.csv",mime="text/csv",use_container_width=True)
+        with sv_col:
+            if AUTH_ENABLED and get_user():
+                if st.button("Save to Cloud", use_container_width=True, key="save_budget"):
+                    if save_user_data(sb):
+                        st.success("Saved!")
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # INVEST & RISK
