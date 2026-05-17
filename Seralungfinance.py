@@ -108,6 +108,14 @@ _i("needs_pct",50); _i("wants_pct",30); _i("invest_pct",20)
 _i("em_pct",30); _i("idx_pct",40); _i("stk_pct",20); _i("cry_pct",10)
 _i("risk_profile","Moderate"); _i("age",32); _i("retirement_age",65)
 
+# Migrate old goal format: "amount" key → "target" (backward compat with saved data)
+for _gi, _g in enumerate(st.session_state.get("goals", [])):
+    if "amount" in _g and "target" not in _g:
+        st.session_state.goals[_gi]["target"] = _g["amount"]
+        del st.session_state.goals[_gi]["amount"]
+    if "saved" not in _g:
+        st.session_state.goals[_gi]["saved"] = 0.0
+
 # ─────────────────────────────────────────────────────────────────────────────
 # HELPERS
 # ─────────────────────────────────────────────────────────────────────────────
@@ -139,6 +147,102 @@ def _p(t):
     t=str(t)
     for u,a in {'\u2014':'-','\u2013':'-','\u2018':"'",'\u2019':"'",'\u201c':'"','\u201d':'"'}.items(): t=t.replace(u,a)
     return t.encode('latin-1',errors='replace').decode('latin-1')
+
+def auto_categorize(desc):
+    d = str(desc).lower()
+    rules = [
+        (["rent","lease","mortgage","real estate","strata"],"Housing"),
+        (["electricity","power","energy","agl","origin","simply","gas","water","council"],"Housing"),
+        (["internet","nbn","optus","telstra","vodafone","tpg"],"Tech"),
+        (["coles","woolworths","aldi","iga","harris farm","costco","supermarket","grocer"],"Food"),
+        (["uber eats","menulog","doordash","mcdonald","kfc","subway","domino","pizza",
+          "cafe","coffee","restaurant","takeaway","bakery","dining","hungry jacks"],"Food"),
+        (["netflix","stan","disney","binge","foxtel","spotify","apple music","youtube","amazon prime"],"Entertainment"),
+        (["gym","fitness","yoga","pilates","crossfit","anytime fitness","f45"],"Health"),
+        (["pharmacy","chemist","doctor","medical","dental","hospital","medibank","bupa","ahm","nib"],"Health"),
+        (["fuel","petrol","shell","bp","caltex","ampol","7-eleven"],"Transport"),
+        (["uber","ola","taxi","parking","toll","myki","opal","train","bus","tram"],"Transport"),
+        (["insurance","nrma","aami","racv","gio","allianz","suncorp"],"Insurance"),
+        (["school","university","tafe","udemy","coursera","education","tuition"],"Education"),
+        (["amazon","ebay","kmart","target","big w","myer","david jones","clothing","cotton on","h&m"],"Personal"),
+    ]
+    for kws, cat in rules:
+        if any(k in d for k in kws): return cat
+    return "Other"
+
+def parse_bank_csv(uploaded_file):
+    try:
+        content = uploaded_file.read().decode("utf-8", errors="replace")
+        lines = content.strip().split("\n"); hi = 0
+        for i, ln in enumerate(lines):
+            if any(k in ln.lower() for k in ["date","amount","description","debit","credit"]):
+                hi = i; break
+        df = pd.read_csv(io.StringIO("\n".join(lines[hi:])), on_bad_lines="skip", dtype=str)
+        df.columns = [x.strip().lower().replace(" ","_") for x in df.columns]
+        dcol = next((c for c in df.columns if "date" in c), None)
+        ncol = next((c for c in df.columns if any(k in c for k in ["description","details","narration","memo","narrative"])), None)
+        acol = next((c for c in df.columns if c in ["amount","net_amount"]), None)
+        dbcol= next((c for c in df.columns if "debit"  in c), None)
+        crcol= next((c for c in df.columns if "credit" in c), None)
+        if not dcol or not ncol: return None, "Cannot find Date/Description columns."
+        res = pd.DataFrame()
+        res["Date"]        = pd.to_datetime(df[dcol], dayfirst=True, errors="coerce")
+        res["Description"] = df[ncol].fillna("Unknown").str.strip()
+        if acol:
+            res["Amount"] = pd.to_numeric(df[acol].str.replace(r"[$,\s]","",regex=True), errors="coerce").fillna(0)
+        elif dbcol and crcol:
+            d2 = pd.to_numeric(df[dbcol].str.replace(r"[$,\s]","",regex=True), errors="coerce").fillna(0)
+            c2 = pd.to_numeric(df[crcol].str.replace(r"[$,\s]","",regex=True), errors="coerce").fillna(0)
+            res["Amount"] = c2 - d2
+        else:
+            return None, "Cannot find Amount/Debit/Credit columns."
+        res["Category"] = res["Description"].apply(auto_categorize)
+        res = res.dropna(subset=["Date"]); res = res[res["Amount"]!=0].sort_values("Date", ascending=False)
+        return res, None
+    except Exception as e:
+        return None, str(e)
+
+def generate_report_csv(period="Monthly"):
+    """Generate full financial report as CSV."""
+    buf = io.StringIO(); w = csv.writer(buf)
+    sr = (total_income-total_exp)/total_income*100 if total_income>0 else 0
+    label = f"Seralung Finance — {period} Report — {datetime.now().strftime('%B %Y')}"
+    w.writerow([label]); w.writerow([f"Generated {datetime.now().strftime('%d %b %Y %H:%M')})"])
+    w.writerow([])
+    w.writerow(["SUMMARY"])
+    for l,v in [("Health Score",f"{hs}/100"),("Income",fmt(total_income)),("Expenses",fmt(total_exp)),
+                ("Savings Rate",pct(sr)),("Net Worth",fmt(net_worth)),("Cash Flow",fmt(cash_flow)),
+                ("Emergency Fund",f"{em_months:.1f} months")]:
+        w.writerow([l,v])
+    w.writerow([])
+    w.writerow(["EXPENSES","","","",""])
+    w.writerow(["Name","Category","Frequency","Spent","Monthly equiv","Budget","Status"])
+    for e in st.session_state.expenses:
+        mo = to_mo(e["amount"],e.get("freq","Monthly"))
+        bud = e.get("budget",e["amount"]); over = "OVER" if mo>bud else "OK"
+        w.writerow([e["name"],e.get("category",""),e.get("freq","Monthly"),f"{e['amount']:.2f}",f"{mo:.2f}",f"{bud:.2f}",over])
+    w.writerow(["Subscriptions (total)","Various","Monthly",f"{total_sub:.2f}",f"{total_sub:.2f}","",""])
+    w.writerow([])
+    w.writerow(["GOALS","","","","",""])
+    w.writerow(["Name","Priority","Target","Saved","Progress","Remaining"])
+    for g in st.session_state.goals:
+        tgt = g.get("target",g.get("amount",0)); sav = g.get("saved",0)
+        pg = sav/tgt*100 if tgt>0 else 0
+        w.writerow([g["name"],g.get("priority",""),f"{tgt:.2f}",f"{sav:.2f}",f"{pg:.0f}%",f"{max(0,tgt-sav):.2f}"])
+    w.writerow([])
+    w.writerow(["ASSETS","",""]); w.writerow(["Name","Type","Value"])
+    for a in st.session_state.assets: w.writerow([a["name"],a["type"],f"{a['value']:.2f}"])
+    w.writerow([])
+    w.writerow(["LIABILITIES","","","",""]); w.writerow(["Name","Type","Balance","Rate%","Min Payment"])
+    for l in st.session_state.liabilities:
+        w.writerow([l["name"],l["type"],f"{l['balance']:.2f}",f"{l.get('rate',0):.2f}",f"{l.get('min_payment',0):.2f}"])
+    if st.session_state.transactions:
+        w.writerow([]); w.writerow(["TRANSACTIONS","","",""])
+        w.writerow(["Date","Description","Amount","Category"])
+        for tx in st.session_state.transactions:
+            w.writerow([tx.get("Date",""),tx.get("Description",""),f"{tx.get('Amount',0):.2f}",tx.get("Category","")])
+    w.writerow([]); w.writerow(["Educational use only. Not financial advice."])
+    return buf.getvalue().encode("utf-8")
 
 def monte_carlo(init, monthly, years=25, n=200, mu=0.07, sigma=0.15):
     months=years*12; res=np.zeros((n,months+1)); res[:,0]=init
@@ -297,7 +401,7 @@ div[data-testid="column"]>div[data-testid="stVerticalBlock"]>div{{margin-bottom:
 /* Tabs */
 [data-testid="stTabs"] [role="tab"]{{background:var(--sur2);border:1px solid var(--bor);border-radius:var(--rads);color:var(--mu)!important;font-size:0.74rem;font-weight:500;padding:0.28rem 0.7rem;margin-right:3px;transition:all .15s;}}
 [data-testid="stTabs"] [role="tab"]:hover{{color:var(--tx)!important;background:var(--sur3);}}
-[data-testid="stTabs"] [role="tab"][aria-selected="true"]{{background:var(--acc)!important;color:{"#fff" if T['accent']!='#18181B' else "#fff"}!important;border-color:var(--acc)!important;font-weight:600;box-shadow:0 0 18px var(--glow);}}
+[data-testid="stTabs"] [role="tab"][aria-selected="true"]{{background:var(--acc)!important;color:#fff!important;border-color:var(--acc)!important;font-weight:600;}}
 [data-testid="stTabs"] [role="tablist"]{{border-bottom:1px solid var(--bor);padding-bottom:.5rem;flex-wrap:wrap;gap:3px;}}
 
 /* Inputs */
@@ -314,7 +418,7 @@ label,[data-testid="stWidgetLabel"]{{color:var(--tx)!important;font-size:0.76rem
 [data-testid="stCheckbox"] span{{color:var(--tx)!important;}}
 
 /* Buttons */
-.stButton>button{{background:var(--grad)!important;border:none!important;border-radius:var(--rads)!important;color:#fff!important;font-weight:600!important;font-family:'DM Sans',sans-serif!important;font-size:0.8rem!important;transition:all .16s;letter-spacing:.01em;}}
+.stButton>button{{background:var(--acc)!important;border:none!important;border-radius:var(--rads)!important;color:#fff!important;font-weight:600!important;font-family:'DM Sans',sans-serif!important;font-size:0.8rem!important;transition:all .16s;letter-spacing:.01em;}}
 .stButton>button:hover{{opacity:.85!important;transform:translateY(-1px);box-shadow:0 4px 16px var(--glow);}}
 .stDownloadButton>button{{background:var(--sur2)!important;color:var(--tx)!important;border:1px solid var(--bor)!important;box-shadow:none!important;}}
 .stDownloadButton>button:hover{{border-color:var(--acc)!important;}}
@@ -343,7 +447,7 @@ hr{{border-color:var(--bor)!important;margin:.6rem 0!important;}}
 .bad {{background:{h2r(T['red'],.14)};color:{T['red']};border:1px solid {h2r(T['red'],.3)};}}
 .blu {{background:{h2r(T['blue'],.14)};color:{T['blue']};border:1px solid {h2r(T['blue'],.3)};}}
 .pur {{background:{h2r(T['purple'],.14)};color:{T['purple']};border:1px solid {h2r(T['purple'],.3)};}}
-.grd{{background:var(--grad);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;font-weight:800;}}
+.grd{{color:var(--acc);font-weight:800;}}
 .income-bar{{background:var(--sur);border:1px solid var(--bor);border-radius:var(--rad);padding:.75rem 1.1rem .5rem;margin-bottom:.75rem;}}
 .chat-user{{background:var(--acc);color:#fff;border-radius:14px 14px 4px 14px;padding:.6rem .9rem;font-size:.8rem;margin:.35rem 0;display:inline-block;max-width:88%;float:right;clear:both;line-height:1.5;}}
 .chat-ai{{background:var(--sur2);color:var(--tx);border-radius:14px 14px 14px 4px;padding:.6rem .9rem;font-size:.8rem;margin:.35rem 0;display:inline-block;max-width:92%;float:left;clear:both;line-height:1.55;border:1px solid var(--bor);}}
@@ -363,7 +467,7 @@ hc1,hc2=st.columns([3,1])
 with hc1:
     st.markdown(f"<h1 style='margin:0;font-size:1.6rem;letter-spacing:-.03em;'>"
                 f"<span class='grd'>Seralung Finance</span></h1>"
-                f"<p style='color:{T['muted']};font-size:.72rem;margin:1px 0 .6rem;'>Premium Financial Intelligence · AUD</p>",
+                f"<p style='color:{T['muted']};font-size:.72rem;margin:1px 0 .6rem;'>Track. Spend. Build. · AUD</p>",
                 unsafe_allow_html=True)
 with hc2:
     st.markdown(f"<div style='text-align:right;padding-top:.3rem;'>"
@@ -646,13 +750,68 @@ with t2:
             if bnn: st.session_state.bills.append({"name":bnn,"amount":float(bna),"due_day":int(bnd)}); st.rerun()
         st.markdown("</div>",unsafe_allow_html=True)
 
+    # ── Import & Export (bottom of Budget tab, full width) ──────────────────────
+    with st.expander("Import Bank Statement  /  Export Report", expanded=False):
+        imp_col, exp_col = st.columns(2, gap="large")
+        with imp_col:
+            st.markdown(f"<span class='clabel'>Import bank statement CSV</span>", unsafe_allow_html=True)
+            st.caption("Supports ANZ, CBA, Westpac, NAB, Macquarie, and most AUS banks. Transactions are auto-categorised.")
+            bank_file = st.file_uploader("Drop CSV here", type=["csv"], key="bank_up")
+            if bank_file:
+                df_tx, err = parse_bank_csv(bank_file)
+                if err:
+                    st.error(f"Parse error: {err}")
+                else:
+                    st.success(f"Found {len(df_tx)} transactions")
+                    df_show = df_tx.copy()
+                    df_show["Date"] = df_show["Date"].dt.strftime("%d %b %Y")
+                    df_show["Amt"] = df_show["Amount"].apply(lambda x: f"+${x:,.2f}" if x>=0 else f"-${abs(x):,.2f}")
+                    st.dataframe(df_show[["Date","Description","Amt","Category"]].head(30), use_container_width=True, hide_index=True)
+                    ic1, ic2 = st.columns(2)
+                    with ic1:
+                        if st.button("Save as transactions", use_container_width=True, key="imp_tx"):
+                            recs = df_tx.to_dict("records")
+                            for r in recs: r["Date"] = str(r["Date"])[:10]
+                            st.session_state.transactions = recs
+                            st.success(f"Saved {len(recs)} transactions"); st.rerun()
+                    with ic2:
+                        if st.button("Add debits to expenses", use_container_width=True, key="imp_exp"):
+                            debits = df_tx[df_tx["Amount"] < 0].copy(); added = 0
+                            for _, row in debits.iterrows():
+                                if abs(row["Amount"]) > 5:
+                                    st.session_state.expenses.append({
+                                        "name": str(row["Description"])[:32], "amount": float(abs(row["Amount"])),
+                                        "budget": float(abs(row["Amount"])), "category": str(row["Category"]), "freq": "Monthly"
+                                    }); added += 1
+                            st.success(f"Added {added} expenses"); st.rerun()
+
+        with exp_col:
+            st.markdown(f"<span class='clabel'>Export financial report</span>", unsafe_allow_html=True)
+            rp = st.selectbox("Report period", ["Monthly","Weekly","Quarterly","Annual"], key="rp_period")
+            now_str = datetime.now().strftime("%Y-%m-%d")
+            st.download_button(
+                f"Download {rp} CSV Report",
+                data=generate_report_csv(rp),
+                file_name=f"seralung_{rp.lower()}_{now_str}.csv",
+                mime="text/csv", use_container_width=True
+            )
+            st.markdown(f"<div style='font-size:.72rem;color:{T['muted']};margin-top:.3rem;line-height:1.6;'>"
+                        f"Includes: expenses, goals, assets, liabilities, net worth, and imported transactions.</div>",
+                        unsafe_allow_html=True)
+            if st.session_state.transactions:
+                st.markdown(f"<div style='margin-top:.5rem;font-size:.75rem;'>"
+                            f"<span class='bd ok'>{len(st.session_state.transactions)} transactions loaded</span></div>",
+                            unsafe_allow_html=True)
+                if st.button("Clear transactions", key="clr_tx", use_container_width=True):
+                    st.session_state.transactions = []; st.rerun()
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # GOALS  — dedicated tab
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with t3:
     # Summary metrics
-    total_target=sum(g["target"] for g in st.session_state.goals)
-    total_saved_g=sum(g["saved"] for g in st.session_state.goals)
+    total_target=sum(g.get("target",g.get("amount",0)) for g in st.session_state.goals)
+    total_saved_g=sum(g.get("saved",0) for g in st.session_state.goals)
     total_remaining=max(0,total_target-total_saved_g)
     overall_pct=total_saved_g/total_target*100 if total_target>0 else 0
     gm1,gm2,gm3,gm4=st.columns(4)
@@ -667,8 +826,8 @@ with t3:
         del_g=None
         GOAL_COLORS={"red":T["red"],"blue":T["blue"],"green":T["green"],"purple":T["purple"],"amber":T["amber"]}
         for i,g in enumerate(st.session_state.goals):
-            rem=max(0,g["target"]-g["saved"])
-            pg=min(100,g["saved"]/g["target"]*100) if g["target"]>0 else 0
+            rem=max(0,g.get("target",g.get("amount",0))-g.get("saved",0))
+            pg=min(100,g.get("saved",0)/g.get("target",g.get("amount",1))*100) if g.get("target",g.get("amount",0))>0 else 0
             # Real time-to-goal: how many months at current save rate
             if investable>0 and rem>0:
                 mo_to_goal=math.ceil(rem/investable)
@@ -685,13 +844,13 @@ with t3:
                             f"<div><span class='bd {pb}' style='margin-right:6px;'>{g.get('priority','Medium')}</span>"
                             f"<span style='font-size:.72rem;color:{T['muted']};'>ETA: {eta}</span></div></div>"
                             f"<div style='display:flex;justify-content:space-between;font-size:.75rem;color:{T['muted']};margin-bottom:6px;'>"
-                            f"<span>{fmt(g['saved'])} saved of {fmt(g['target'])} target</span>"
+                            f"<span>{fmt(g['saved'])} saved of {fmt(g.get("target",g.get("amount",0)))} target</span>"
                             f"<span style='color:{col_hex};font-weight:600;'>{pg:.0f}% done</span></div>"
                             f"<div class='pbar' style='height:8px;'><div class='pfill' style='width:{pg:.1f}%;background:{col_hex};'></div></div>"
                             f"<div style='font-size:.7rem;color:{T['muted']};margin-top:4px;'>{fmt(rem)} remaining · at {fmt(investable)}/mo investable</div>"
                             f"</div>",unsafe_allow_html=True)
                 # Update saved amount
-                new_s=st.number_input(f"Update saved ({g['name']})",value=float(g["saved"]),min_value=0.0,max_value=float(g["target"]),step=100.0,key=f"gupd_{i}",format="%.0f",label_visibility="collapsed")
+                new_s=st.number_input(f"Update saved ({g['name']})",value=float(g["saved"]),min_value=0.0,max_value=float(g.get("target",g.get("amount",0))),step=100.0,key=f"gupd_{i}",format="%.0f",label_visibility="collapsed")
                 if new_s!=g["saved"]: st.session_state.goals[i]["saved"]=new_s; st.rerun()
             with gd:
                 st.markdown("<div style='margin-top:.6rem;'></div>",unsafe_allow_html=True)
@@ -715,10 +874,10 @@ with t3:
         # Goal allocation
         if st.session_state.goals and investable>0:
             st.markdown(f"<div class='card'><span class='clabel'>Smart Allocation ({fmt(investable)}/mo available)</span>",unsafe_allow_html=True)
-            high_goals=[g for g in st.session_state.goals if g.get("priority")=="High" and g["saved"]<g["target"]]
-            med_goals =[g for g in st.session_state.goals if g.get("priority")=="Medium" and g["saved"]<g["target"]]
-            low_goals =[g for g in st.session_state.goals if g.get("priority")=="Low" and g["saved"]<g["target"]]
-            total_g=len([g for g in st.session_state.goals if g["saved"]<g["target"]])
+            high_goals=[g for g in st.session_state.goals if g.get("priority")=="High" and g.get("saved",0)<g.get("target",g.get("amount",0))]
+            med_goals =[g for g in st.session_state.goals if g.get("priority")=="Medium" and g.get("saved",0)<g.get("target",g.get("amount",0))]
+            low_goals =[g for g in st.session_state.goals if g.get("priority")=="Low" and g.get("saved",0)<g.get("target",g.get("amount",0))]
+            total_g=len([g for g in st.session_state.goals if g.get("saved",0)<g.get("target",g.get("amount",0))])
             alloc_pcts={"High":.6,"Medium":.3,"Low":.1}
             rem_invest=investable
             for label,goals,ap in [("High priority",high_goals,0.6),("Medium priority",med_goals,0.3),("Low priority",low_goals,0.1)]:
@@ -727,7 +886,7 @@ with t3:
                     per=pool/len(goals)
                     st.markdown(f"<div style='font-size:.73rem;font-weight:600;color:{T['text']};margin:.4rem 0 .2rem;'>{label}</div>",unsafe_allow_html=True)
                     for g in goals:
-                        rem_g=max(0,g["target"]-g["saved"])
+                        rem_g=max(0,g.get("target",g.get("amount",0))-g.get("saved",0))
                         mo_g=math.ceil(rem_g/per) if per>0 else 9999
                         st.markdown(f"<div class='crow'><span style='font-size:.74rem;'>{g['name']}</span>"
                                     f"<div><span style='color:{T['accent']};font-weight:600;font-size:.74rem;'>{fmt(per)}/mo</span>"
@@ -749,8 +908,8 @@ with t3:
         buf=io.StringIO(); w=csv.writer(buf)
         w.writerow(["Goal","Target","Saved","Progress","Remaining","Priority"])
         for g in st.session_state.goals:
-            pg=g["saved"]/g["target"]*100 if g["target"]>0 else 0
-            w.writerow([g["name"],f"{g['target']:.2f}",f"{g['saved']:.2f}",f"{pg:.0f}%",f"{max(0,g['target']-g['saved']):.2f}",g.get("priority","")])
+            pg=g.get("saved",0)/g.get("target",g.get("amount",1))*100 if g.get("target",g.get("amount",0))>0 else 0
+            w.writerow([g["name"],f"{g.get("target",g.get("amount",0)):.2f}",f"{g['saved']:.2f}",f"{pg:.0f}%",f"{max(0,g.get("target",g.get("amount",0))-g['saved']):.2f}",g.get("priority","")])
         st.download_button("Export goals CSV",data=buf.getvalue().encode(),
             file_name=f"goals_{datetime.now().strftime('%Y-%m-%d')}.csv",mime="text/csv",use_container_width=True)
 
@@ -1075,7 +1234,7 @@ Give concise, specific, actionable AUD advice under 180 words."""
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 with t7:
     st.markdown(f"<div style='text-align:center;padding:1rem 0 .8rem;'>"
-                f"<div class='grd' style='font-size:2rem;letter-spacing:-.03em;'>Seralung Finance Pro</div>"
+                f"<div style='font-size:2rem;font-weight:800;color:{T['accent']};letter-spacing:-.03em;'>Seralung Finance Pro</div>"
                 f"<div style='color:{T['muted']};font-size:.82rem;margin-top:.3rem;'>Your complete financial operating system</div>"
                 f"</div>",unsafe_allow_html=True)
     pc1,pc2,pc3=st.columns(3,gap="large")
