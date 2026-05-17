@@ -381,6 +381,8 @@ h1,h2,h3,h4{{color:var(--tx)!important;font-weight:600;font-family:'DM Sans',san
 ::-webkit-scrollbar-thumb{{background:var(--bor);border-radius:99px;}}
 [data-testid="stSidebar"]{{background:var(--sur)!important;border-right:1px solid var(--bor);}}
 [data-testid="stSidebar"] *{{color:var(--tx)!important;}}
+[data-testid="stSidebar"] .stButton>button{{background:transparent!important;border:1px solid var(--bor)!important;color:var(--tx)!important;font-weight:500!important;}}
+[data-testid="stSidebar"] .stButton>button:hover{{background:var(--sur2)!important;border-color:var(--acc)!important;color:var(--acc)!important;transform:none;box-shadow:none;}}
 .block-container{{padding:0.9rem 1.4rem 2rem!important;max-width:none!important;}}
 
 /* Compact vertical spacing */
@@ -448,7 +450,7 @@ hr{{border-color:var(--bor)!important;margin:.6rem 0!important;}}
 .blu {{background:{h2r(T['blue'],.14)};color:{T['blue']};border:1px solid {h2r(T['blue'],.3)};}}
 .pur {{background:{h2r(T['purple'],.14)};color:{T['purple']};border:1px solid {h2r(T['purple'],.3)};}}
 .grd{{color:var(--acc);font-weight:800;}}
-.income-bar{{background:var(--sur);border:1px solid var(--bor);border-radius:var(--rad);padding:.75rem 1.1rem .5rem;margin-bottom:.75rem;}}
+.income-bar{{margin-bottom:.4rem;}}
 .chat-user{{background:var(--acc);color:#fff;border-radius:14px 14px 4px 14px;padding:.6rem .9rem;font-size:.8rem;margin:.35rem 0;display:inline-block;max-width:88%;float:right;clear:both;line-height:1.5;}}
 .chat-ai{{background:var(--sur2);color:var(--tx);border-radius:14px 14px 14px 4px;padding:.6rem .9rem;font-size:.8rem;margin:.35rem 0;display:inline-block;max-width:92%;float:left;clear:both;line-height:1.55;border:1px solid var(--bor);}}
 .chat-wrap::after{{content:'';display:table;clear:both;}}
@@ -467,18 +469,18 @@ hc1,hc2=st.columns([3,1])
 with hc1:
     st.markdown(f"<h1 style='margin:0;font-size:1.6rem;letter-spacing:-.03em;'>"
                 f"<span class='grd'>Seralung Finance</span></h1>"
-                f"<p style='color:{T['muted']};font-size:.72rem;margin:1px 0 .6rem;'>Track. Spend. Build. · AUD</p>",
+                f"<p style='color:{T['muted']};font-size:.72rem;margin:1px 0 .6rem;'>Track. Spend. Build.</p>",
                 unsafe_allow_html=True)
 with hc2:
-    st.markdown(f"<div style='text-align:right;padding-top:.3rem;'>"
-                f"<div style='font-size:.64rem;color:{T['muted']};'>{datetime.now().strftime('%A')}</div>"
-                f"<div style='font-size:.85rem;font-weight:600;color:{T['text']};'>{datetime.now().strftime('%d %b %Y')}</div>"
+    st.markdown(f"<div style='text-align:right;padding-top:.25rem;'>"
+                f"<div style='font-size:.62rem;color:{T['muted']};'>{datetime.now().strftime('%A, %d %b %Y')}</div>"
+                f"<div style='font-size:.72rem;font-weight:700;color:{T['accent']};letter-spacing:.06em;margin-top:2px;'>AUD</div>"
                 f"</div>",unsafe_allow_html=True)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # INCOME — always visible
 # ─────────────────────────────────────────────────────────────────────────────
-st.markdown(f"<div class='income-bar'><span class='clabel'>Income & Budget Rule</span></div>",unsafe_allow_html=True)
+st.markdown(f"<span class='clabel' style='margin-bottom:.5rem;display:block;'>Income & Budget Rule</span>",unsafe_allow_html=True)
 c1,c2,c3,c4,c5=st.columns([2,2,1,1,1])
 with c1: primary_income=st.number_input("Take home income /mo",min_value=0.0,value=6000.0,step=100.0,format="%.0f",key="pi")
 with c2: other_income  =st.number_input("Other income /mo",min_value=0.0,value=500.0,step=50.0,format="%.0f",key="oi")
