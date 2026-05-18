@@ -19,6 +19,32 @@ except ImportError:
     PDF_OK = False
 
 try:
+    import plotly.io as pio; KALEIDO_OK = True
+except Exception:
+    KALEIDO_OK = False
+
+import tempfile, os as _os
+
+def _fig_png(fig, w=1100, h=420):
+    """Export plotly figure to PNG bytes for PDF embedding."""
+    if not KALEIDO_OK: return None
+    try:
+        return pio.to_image(fig, format="png", width=w, height=h, scale=2)
+    except Exception:
+        return None
+
+def _pdf_img(pdf, img_bytes, pw=185, margin_left=12):
+    """Embed PNG bytes into FPDF page."""
+    if not img_bytes: return
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            tmp.write(img_bytes); path=tmp.name
+        pdf.image(path, x=margin_left, w=pw)
+        _os.unlink(path)
+    except Exception:
+        pass
+
+try:
     from db import init_supabase, get_user, restore_session, load_user_data, save_user_data, login_page, logout
     AUTH_ENABLED = True
 except ImportError:
@@ -385,57 +411,430 @@ def gen_csv(period="Monthly"):
     w.writerow([]);w.writerow(["Educational use only. Not financial advice."])
     return buf.getvalue().encode("utf-8")
 
+# ─────────────────────────────────────────────────────────────────────────────
+# INVESTMENT GUIDE  — Australian-specific recommendations by risk profile
+# ─────────────────────────────────────────────────────────────────────────────
+INVEST_GUIDE = {
+    "Conservative": {
+        "summary": "Capital preservation with modest growth. Best for short horizons or retirees.",
+        "items": [
+            ("High-Yield Savings / Term Deposit", 30, "Safe, liquid, government-backed",
+             ["ING Savings Maximiser","UBank Save","Macquarie Savings","Term deposits via banks"],"gr"),
+            ("Australian Bond ETF", 28, "Fixed income, low volatility, stable returns",
+             ["VAF — Vanguard AUS Fixed Interest","VACF — iShares Core AUS Bond","IAF — iShares AUS Composite Bond"],"bl"),
+            ("Australian Shares ETF", 22, "Broad ASX 200/300, franked dividends",
+             ["VAS — Vanguard AUS Shares","IOZ — iShares ASX 200","STW — SPDR ASX 200"],"gr"),
+            ("International Shares ETF", 15, "Global diversification, USD exposure",
+             ["VGS — Vanguard MSCI World","IWLD — iShares MSCI World","BGBL — Betashares Global Shares"],"bl"),
+            ("Listed Investment Companies (LICs)", 5, "Steady franked dividends, long track record",
+             ["AFI — Australian Foundation Investment","ARG — Argo Investments","MLT — Milton Corporation"],"pu"),
+        ],
+        "avoid": ["Individual stocks","Crypto","Leveraged ETFs","Speculative assets","Micro-caps"],
+        "super": "Salary sacrifice up to $30k/yr into super. Choose a Balanced or Conservative super option.",
+    },
+    "Moderate": {
+        "summary": "Balanced growth and stability. Ideal for 5–10 year investors.",
+        "items": [
+            ("Australian Shares ETF", 30, "Core ASX holdings, franked dividends, tax-effective",
+             ["VAS — Vanguard AUS Shares","IOZ — iShares ASX 200","A200 — Betashares AUS 200"],"gr"),
+            ("International Shares ETF", 28, "US and global market exposure",
+             ["VGS — Vanguard MSCI World","IVV — iShares S&P 500","NDQ — Betashares NASDAQ 100"],"bl"),
+            ("Bonds / Fixed Interest", 18, "Portfolio stability, reduces volatility",
+             ["VAF — Vanguard AUS Fixed Interest","VBND — Vanguard Global Bond (AUD hedged)"],"am"),
+            ("Listed REITs / Property ETF", 10, "Property exposure without buying real estate",
+             ["VAP — Vanguard AUS Property","SLF — SPDR Property","MGR — Mirvac","GMG — Goodman Group"],"pu"),
+            ("High-Yield Savings", 10, "Liquid emergency buffer",
+             ["ING Savings Maximiser","Macquarie Savings","UBank Save Account"],"gr"),
+            ("Crypto (small allocation)", 4, "Small speculative position only",
+             ["BTC — Bitcoin via CoinSpot","ETH — Ethereum via Swyftx"],"rd"),
+        ],
+        "avoid": ["Concentrated single-stock bets >10%","High-fee managed funds (>0.5% MER)","Crypto >5%"],
+        "super": "Check your super's investment option. Switch to Balanced or High Growth if under 50.",
+    },
+    "Growth": {
+        "summary": "Higher long-term returns. Accepts short-term volatility. Horizon 7+ years.",
+        "items": [
+            ("International Shares ETF", 35, "Core global growth — US tech drives long-term gains",
+             ["IVV — iShares S&P 500","NDQ — Betashares NASDAQ 100","VGS — Vanguard MSCI World"],"bl"),
+            ("Australian Shares ETF", 25, "Domestic equities, dividend income, franking credits",
+             ["VAS — Vanguard AUS Shares","A200 — Betashares AUS 200","IOZ — iShares ASX 200"],"gr"),
+            ("Sector / Thematic ETFs", 15, "Higher conviction sectors for extra growth",
+             ["RBTZ — Betashares Global Robots & AI","HACK — Betashares Cyber Security","CLNE — VanEck Clean Energy"],"pu"),
+            ("Individual Stocks (ASX)", 10, "High conviction positions in quality companies",
+             ["Research ASX growth/quality stocks","CBA, CSL, WES, REA, XRO as examples"],"am"),
+            ("REITs", 7, "Property diversification with liquidity",
+             ["VAP — Vanguard AUS Property","GMG — Goodman Group","MGR — Mirvac Group"],"bl"),
+            ("Crypto", 8, "Speculative high-growth allocation",
+             ["BTC — Bitcoin","ETH — Ethereum","via CoinSpot, Swyftx, or Binance AU"],"rd"),
+        ],
+        "avoid": ["Term deposits as main investment","Bond-heavy portfolios (>20%)","Cash drag"],
+        "super": "Salary sacrifice to super — High Growth option recommended. Consider SMSFs if portfolio >$250k.",
+    },
+    "Aggressive": {
+        "summary": "Maximum growth. Long horizon 10+ years. High volatility fully accepted.",
+        "items": [
+            ("International ETF — Growth Heavy", 33, "US/global growth markets are the core engine",
+             ["IVV — iShares S&P 500","NDQ — Betashares NASDAQ 100","QQQ (via Stake/eToro for US)"],"bl"),
+            ("Individual Stocks (ASX + US)", 25, "High conviction picks for alpha generation",
+             ["ASX: quality growth companies","US stocks via Stake, eToro, or moomoo"],"gr"),
+            ("Sector ETFs — Disruptive Tech", 15, "High-growth, high-risk sector bets",
+             ["RBTZ — Robots & AI","HACK — Cyber Security","ESPO — Video Gaming & Esports"],"pu"),
+            ("Crypto", 15, "Significant speculative allocation — high risk/reward",
+             ["BTC — Bitcoin (60% of crypto allocation)","ETH — Ethereum (30%)","Altcoins via CoinSpot (10%)"],"rd"),
+            ("Small-Caps / Micro-Caps", 12, "Small companies with outsized growth potential",
+             ["MVS — VanEck Small Companies Masters","IEM — iShares MSCI Emerging Markets"],"am"),
+        ],
+        "avoid": ["Bonds as primary holding","High cash allocation >10%","Defensive assets (if long-term)"],
+        "super": "Max salary sacrifice to super. Choose High Growth or International Shares super option. Consider SMSF.",
+    },
+}
+
 def gen_pdf(period="Monthly"):
+    """Generate comprehensive PDF report with charts."""
     if not PDF_OK: return None
-    pdf=FPDF(); pdf.set_auto_page_break(auto=True,margin=15); pdf.add_page()
-    pdf.set_fill_color(5,100,70); pdf.rect(0,0,210,36,"F")
-    pdf.set_font("Helvetica","B",20); pdf.set_text_color(200,255,230)
-    pdf.cell(0,15,"",ln=True); pdf.cell(0,12,_p("  Seralung Finance"),ln=True)
-    pdf.set_font("Helvetica","",10); pdf.set_text_color(150,220,190)
-    pdf.cell(0,6,_p(f"  {period} Report  |  {datetime.now().strftime('%B %Y')}"),ln=True); pdf.ln(8)
-    sc=(74,222,128) if hs>=70 else (251,191,36) if hs>=50 else (248,113,113)
-    grade_="Excellent" if hs>=80 else "Good" if hs>=65 else "Fair" if hs>=50 else "Needs Work" if hs>=35 else "Critical"
-    pdf.set_text_color(30,30,30); pdf.set_font("Helvetica","B",13)
-    pdf.cell(0,9,_p("Financial Health Score"),ln=True)
-    pdf.set_font("Helvetica","B",38); pdf.set_text_color(*sc)
-    pdf.cell(0,14,_p(f"{hs}/100  {grade_}"),ln=True); pdf.set_text_color(30,30,30); pdf.ln(3)
-    pdf.set_font("Helvetica","B",13); pdf.cell(0,9,_p("Monthly Summary"),ln=True)
+
+    def sec(pdf, title):
+        pdf.set_fill_color(5,100,70); pdf.set_text_color(255,255,255)
+        pdf.set_font("Helvetica","B",11)
+        pdf.cell(0,8,_p(f"  {title}"),fill=True,ln=True)
+        pdf.set_text_color(30,30,30); pdf.ln(2)
+
+    def row2(pdf,label,value,alt=False,green=False,red=False):
+        pdf.set_fill_color(242,252,246) if alt else pdf.set_fill_color(255,255,255)
+        pdf.set_font("Helvetica","",9); pdf.set_text_color(80,80,80)
+        pdf.cell(100,7,_p(f"  {label}"),fill=True)
+        pdf.set_font("Helvetica","B",9)
+        if green: pdf.set_text_color(5,100,70)
+        elif red: pdf.set_text_color(180,30,30)
+        else: pdf.set_text_color(30,30,30)
+        pdf.cell(85,7,_p(f"  {value}"),fill=True,ln=True)
+        pdf.set_text_color(30,30,30)
+
     sr=(total_income-total_exp)/total_income*100 if total_income>0 else 0
-    for i,(l,v) in enumerate([("Income",fmt(total_income)),("Expenses",fmt(total_exp)),
-            ("Cash Flow",fmt(cash_flow)),("Savings Rate",pct(sr)),("Net Worth",fmt(net_worth))]):
-        pdf.set_fill_color(240,252,245) if i%2==0 else pdf.set_fill_color(255,255,255)
-        pdf.set_font("Helvetica","",10); pdf.set_text_color(80,80,80)
-        pdf.cell(100,8,_p(f"  {l}"),fill=True)
-        pdf.set_font("Helvetica","B",10); pdf.set_text_color(5,100,70)
-        pdf.cell(80,8,_p(f"  {v}"),fill=True,ln=True)
-    pdf.ln(4); pdf.set_font("Helvetica","B",13); pdf.set_text_color(30,30,30)
-    pdf.cell(0,9,_p("Expenses"),ln=True)
+    grade_="Excellent" if hs>=80 else "Good" if hs>=65 else "Fair" if hs>=50 else "Needs Work" if hs>=35 else "Critical"
+    sc=(5,168,90) if hs>=70 else (217,119,6) if hs>=50 else (185,28,28)
+    risk_sel=st.session_state.get("risk_profile","Moderate")
+    age_val=st.session_state.get("age",32)
+
+    pdf=FPDF(); pdf.set_auto_page_break(auto=True,margin=18)
+
+    # ── PAGE 1: Cover + Overview ──────────────────────────────────────────────
+    pdf.add_page()
+    # Header banner
+    pdf.set_fill_color(10,62,44); pdf.rect(0,0,210,42,"F")
+    pdf.set_font("Helvetica","B",22); pdf.set_text_color(200,255,225)
+    pdf.cell(0,18,"",ln=True)
+    pdf.cell(0,13,_p("  Seralung Finance"),ln=True)
+    pdf.set_font("Helvetica","",10); pdf.set_text_color(120,210,170)
+    pdf.cell(0,7,_p(f"  {period} Financial Report   |   {datetime.now().strftime('%d %B %Y')}"),ln=True)
+    pdf.ln(7)
+
+    # Health score + grade
+    pdf.set_font("Helvetica","B",14); pdf.set_text_color(30,30,30)
+    pdf.cell(0,9,_p("Financial Health Score"),ln=True)
+    pdf.set_font("Helvetica","B",52); pdf.set_text_color(*sc)
+    pdf.cell(50,18,_p(f"{hs}"),)
+    pdf.set_font("Helvetica","",14); pdf.set_text_color(80,80,80)
+    pdf.cell(0,18,_p(f"/ 100  -  {grade_}"),ln=True)
+    pdf.set_text_color(30,30,30); pdf.ln(2)
+
+    # Key metrics 2-col
+    pdf.set_font("Helvetica","B",12); pdf.cell(0,8,_p("Monthly Snapshot"),ln=True)
+    metrics=[("Monthly Income",fmt(total_income)),("Monthly Expenses",fmt(total_exp)),
+             ("Cash Flow",fmt(cash_flow)),("Savings Rate",pct(sr)),
+             ("Net Worth",fmt(net_worth)),("Emergency Fund",f"{em_months:.1f} months")]
+    for i,(l,v) in enumerate(metrics): row2(pdf,l,v,i%2==0)
+    pdf.ln(4)
+
+    # Budget rule
+    sec(pdf,"Budget Rule (Needs / Wants / Save & Invest)")
+    needs_cats={"Housing","Transport","Health","Insurance","Education"}
+    needs_actual=sum(to_mo(e["amount"],e.get("freq","Monthly")) for e in st.session_state.expenses if e.get("category") in needs_cats)
+    wants_actual=sum(to_mo(e["amount"],e.get("freq","Monthly")) for e in st.session_state.expenses if e.get("category") not in needs_cats)+total_sub
+    for lbl,actual,budget in [("Needs",needs_actual,total_income*needs_pct/100),
+                               ("Wants",wants_actual,total_income*wants_pct/100),
+                               ("Save & Invest",investable,investable)]:
+        p=min(200,actual/budget*100) if budget>0 else 0
+        status="OVER BUDGET" if p>100 else "On track"
+        row2(pdf,f"{lbl}  ({fmt(actual)} / {fmt(budget)})",f"{p:.0f}%  {status}",green=p<=100,red=p>100)
+    pdf.ln(3)
+
+    # Score breakdown
+    sec(pdf,"Health Score Breakdown")
     pdf.set_fill_color(5,100,70); pdf.set_text_color(255,255,255); pdf.set_font("Helvetica","B",9)
-    for hdr,w_ in [("  Name",70),("Category",30),("Spent",25),("Budget",25),("Status",20)]:
-        pdf.cell(w_,7,_p(hdr),fill=True)
+    for h_,w_ in [("  Pillar",85),("Score",25),("Max",20),("Value",40),("Status",20)]:
+        pdf.cell(w_,7,_p(h_),fill=True)
+    pdf.ln()
+    for i,(name,d) in enumerate(hs_det.items()):
+        pdf.set_fill_color(242,252,246) if i%2==0 else pdf.set_fill_color(255,255,255)
+        pdf.set_font("Helvetica","",9); pdf.set_text_color(60,60,60)
+        pdf.cell(85,7,_p(f"  {name}"),fill=True)
+        pdf.set_text_color(5,100,70) if d["ok"] else pdf.set_text_color(185,28,28)
+        pdf.set_font("Helvetica","B",9)
+        pdf.cell(25,7,_p(f"{d['score']:.0f}"),fill=True)
+        pdf.set_text_color(60,60,60); pdf.set_font("Helvetica","",9)
+        pdf.cell(20,7,_p(f"{d['max']}"),fill=True)
+        pdf.cell(40,7,_p(d["val"]),fill=True)
+        pdf.set_text_color(5,100,70) if d["ok"] else pdf.set_text_color(185,28,28)
+        pdf.cell(20,7,_p("Good" if d["ok"] else "Low"),fill=True,ln=True)
+    pdf.set_text_color(30,30,30)
+
+    # ── PAGE 2: Spending Charts ───────────────────────────────────────────────
+    pdf.add_page()
+    pdf.set_fill_color(10,62,44); pdf.rect(0,0,210,12,"F")
+    pdf.set_font("Helvetica","B",11); pdf.set_text_color(200,255,225)
+    pdf.cell(0,12,_p("  Seralung Finance   |   Spending Analysis"),ln=True)
+    pdf.set_text_color(30,30,30); pdf.ln(4)
+
+    # Spending donut chart
+    sec(pdf,"Spending by Category")
+    if st.session_state.expenses:
+        df_e2=pd.DataFrame(st.session_state.expenses)
+        df_e2["mo"]=df_e2.apply(lambda r:to_mo(r["amount"],r.get("freq","Monthly")),axis=1)
+        df_e2=df_e2[df_e2["mo"]>0]
+        if not df_e2.empty:
+            cat_df=df_e2.groupby("category")["mo"].sum().reset_index()
+            cc=["#059669","#2563EB","#D97706","#DC2626","#7C3AED","#0891B2","#BE185D","#0284C7","#16A34A","#9333EA"]
+            n=len(cat_df); colors=(cc*3)[:n]
+            fig_d=go.Figure(go.Pie(labels=cat_df["category"],values=cat_df["mo"],hole=0.55,
+                marker=dict(colors=colors,line=dict(color="#ffffff",width=2)),
+                textfont=dict(size=13),textposition="outside"))
+            fig_d.update_layout(paper_bgcolor="#ffffff",plot_bgcolor="#ffffff",
+                height=420,margin=dict(l=20,r=20,t=20,b=20),showlegend=True,
+                legend=dict(font=dict(size=12)),
+                font=dict(family="Inter,sans-serif",color="#374151"))
+            _pdf_img(pdf,_fig_png(fig_d,1000,430))
+
+    # Spent vs budget bar
+    pdf.ln(3); sec(pdf,"Expenses — Spent vs Budget")
+    if st.session_state.expenses:
+        df3=pd.DataFrame(st.session_state.expenses)
+        df3["mo"]=df3.apply(lambda r:to_mo(r["amount"],r.get("freq","Monthly")),axis=1)
+        cat_s=df3.groupby("category").agg({"mo":"sum","budget":"sum"}).reset_index()
+        fig_b=go.Figure()
+        fig_b.add_trace(go.Bar(name="Budget",x=cat_s["category"],y=cat_s["budget"],
+            marker_color="rgba(5,150,105,0.3)",marker_line=dict(color="#059669",width=1.5)))
+        fig_b.add_trace(go.Bar(name="Spent",x=cat_s["category"],y=cat_s["mo"],
+            marker_color="#059669",
+            text=[f"${v:,.0f}" for v in cat_s["mo"]],textposition="outside"))
+        fig_b.update_layout(barmode="overlay",paper_bgcolor="#ffffff",plot_bgcolor="#ffffff",
+            height=360,margin=dict(l=20,r=20,t=20,b=20),
+            font=dict(family="Inter,sans-serif",color="#374151",size=12),
+            legend=dict(orientation="h"),yaxis=dict(tickprefix="$"))
+        _pdf_img(pdf,_fig_png(fig_b,1100,380))
+
+    # Expense table
+    pdf.ln(2); sec(pdf,"Expense Detail")
+    pdf.set_fill_color(5,100,70); pdf.set_text_color(255,255,255); pdf.set_font("Helvetica","B",9)
+    for h_,w_ in [("  Name",60),("Category",28),("Freq",18),("Spent",24),("Budget",24),("Monthly",24),("Status",17)]:
+        pdf.cell(w_,7,_p(h_),fill=True)
     pdf.ln()
     for i,e in enumerate(st.session_state.expenses):
         mo=to_mo(e["amount"],e.get("freq","Monthly")); bud=e.get("budget",e["amount"]); over=mo>bud
-        pdf.set_fill_color(240,252,245) if i%2==0 else pdf.set_fill_color(255,255,255)
-        pdf.set_font("Helvetica","",9); pdf.set_text_color(30,30,30)
-        pdf.cell(70,7,_p(f"  {e['name'][:28]}"),fill=True)
-        pdf.cell(30,7,_p(e.get("category","")[:12]),fill=True)
-        pdf.cell(25,7,_p(f"${mo:,.0f}"),fill=True); pdf.cell(25,7,_p(f"${bud:,.0f}"),fill=True)
-        pdf.set_text_color(180,20,20) if over else pdf.set_text_color(5,100,70)
-        pdf.cell(20,7,_p("OVER" if over else "OK"),fill=True,ln=True); pdf.set_text_color(30,30,30)
-    pdf.ln(4); pdf.set_font("Helvetica","B",13)
-    pdf.cell(0,9,_p("Goals"),ln=True)
+        pdf.set_fill_color(242,252,246) if i%2==0 else pdf.set_fill_color(255,255,255)
+        pdf.set_font("Helvetica","",8.5); pdf.set_text_color(50,50,50)
+        pdf.cell(60,7,_p(f"  {e['name'][:22]}"),fill=True)
+        pdf.cell(28,7,_p(e.get("category","")[:11]),fill=True)
+        pdf.cell(18,7,_p(e.get("freq","Mo")[:2]),fill=True)
+        pdf.cell(24,7,_p(f"${e['amount']:,.0f}"),fill=True)
+        pdf.cell(24,7,_p(f"${bud:,.0f}"),fill=True)
+        pdf.cell(24,7,_p(f"${mo:,.0f}"),fill=True)
+        pdf.set_text_color(180,30,30) if over else pdf.set_text_color(5,120,60)
+        pdf.set_font("Helvetica","B",8.5)
+        pdf.cell(17,7,_p("OVER" if over else "OK"),fill=True,ln=True)
+    pdf.set_text_color(30,30,30)
+
+    # ── PAGE 3: Net Worth + Goals ─────────────────────────────────────────────
+    pdf.add_page()
+    pdf.set_fill_color(10,62,44); pdf.rect(0,0,210,12,"F")
+    pdf.set_font("Helvetica","B",11); pdf.set_text_color(200,255,225)
+    pdf.cell(0,12,_p("  Seralung Finance   |   Net Worth & Goals"),ln=True)
+    pdf.set_text_color(30,30,30); pdf.ln(4)
+
+    # Net worth headline
+    nw_c=(5,168,90) if net_worth>=0 else (185,28,28)
+    pdf.set_font("Helvetica","B",11); pdf.cell(0,8,_p("Net Worth"),ln=True)
+    pdf.set_font("Helvetica","B",36); pdf.set_text_color(*nw_c)
+    pdf.cell(0,14,_p(fmt(net_worth)),ln=True); pdf.set_text_color(30,30,30)
+
+    # Waterfall chart
+    if st.session_state.assets or st.session_state.liabilities:
+        wf_x=[a["name"] for a in st.session_state.assets]+[l["name"] for l in st.session_state.liabilities]+["Net Worth"]
+        wf_m=["relative"]*len(st.session_state.assets)+["relative"]*len(st.session_state.liabilities)+["total"]
+        wf_y=[a["value"] for a in st.session_state.assets]+[-l["balance"] for l in st.session_state.liabilities]+[0]
+        fig_wf=go.Figure(go.Waterfall(x=wf_x,measure=wf_m,y=wf_y,
+            connector=dict(line=dict(color="#E5E7EB",width=0.5)),
+            increasing=dict(marker=dict(color="#059669")),
+            decreasing=dict(marker=dict(color="#DC2626")),
+            totals=dict(marker=dict(color="#059669" if net_worth>=0 else "#DC2626")),
+            texttemplate="%{y:$,.0f}",textposition="outside",textfont=dict(size=11)))
+        fig_wf.update_layout(paper_bgcolor="#ffffff",plot_bgcolor="#ffffff",
+            height=360,margin=dict(l=20,r=20,t=20,b=20),
+            font=dict(family="Inter,sans-serif",color="#374151",size=12),
+            yaxis=dict(tickprefix="$"))
+        _pdf_img(pdf,_fig_png(fig_wf,1100,380)); pdf.ln(2)
+
+    # Assets
+    sec(pdf,"Assets")
+    pdf.set_fill_color(5,100,70); pdf.set_text_color(255,255,255); pdf.set_font("Helvetica","B",9)
+    for h_,w_ in [("  Name",100),("Type",45),("Value",45)]: pdf.cell(w_,7,_p(h_),fill=True)
+    pdf.ln()
+    for i,a in enumerate(st.session_state.assets):
+        pdf.set_fill_color(242,252,246) if i%2==0 else pdf.set_fill_color(255,255,255)
+        pdf.set_font("Helvetica","",9); pdf.set_text_color(50,50,50)
+        pdf.cell(100,7,_p(f"  {a['name']}"),fill=True); pdf.cell(45,7,_p(a["type"]),fill=True)
+        pdf.set_font("Helvetica","B",9); pdf.set_text_color(5,100,70)
+        pdf.cell(45,7,_p(f"+{fmt(a['value'])}"),fill=True,ln=True)
+    pdf.set_text_color(30,30,30); pdf.ln(2)
+
+    # Liabilities
+    sec(pdf,"Liabilities")
+    pdf.set_fill_color(5,100,70); pdf.set_text_color(255,255,255); pdf.set_font("Helvetica","B",9)
+    for h_,w_ in [("  Name",80),("Type",35),("Balance",35),("Rate",20),("Annual Int.",20)]: pdf.cell(w_,7,_p(h_),fill=True)
+    pdf.ln()
+    for i,l in enumerate(st.session_state.liabilities):
+        ann_i=l["balance"]*l.get("rate",0)/100
+        pdf.set_fill_color(255,242,242) if i%2==0 else pdf.set_fill_color(255,255,255)
+        pdf.set_font("Helvetica","",9); pdf.set_text_color(50,50,50)
+        pdf.cell(80,7,_p(f"  {l['name']}"),fill=True); pdf.cell(35,7,_p(l["type"]),fill=True)
+        pdf.set_font("Helvetica","B",9); pdf.set_text_color(185,28,28)
+        pdf.cell(35,7,_p(f"-{fmt(l['balance'])}"),fill=True)
+        pdf.set_font("Helvetica","",9); pdf.set_text_color(50,50,50)
+        pdf.cell(20,7,_p(f"{l.get('rate',0):.1f}%"),fill=True)
+        pdf.cell(20,7,_p(fmt(ann_i)),fill=True,ln=True)
+    pdf.set_text_color(30,30,30); pdf.ln(4)
+
+    # Goals with visual bar
+    sec(pdf,"Financial Goals")
+    pdf.set_fill_color(5,100,70); pdf.set_text_color(255,255,255); pdf.set_font("Helvetica","B",9)
+    for h_,w_ in [("  Goal",70),("Priority",24),("Target",28),("Saved",28),("Progress",22),("ETA"),]:
+        pdf.cell(w_ if h_!="ETA" else 18,7,_p(h_),fill=True)
+    pdf.ln()
+    investable_=investable if investable>0 else 1
     for i,g in enumerate(st.session_state.goals):
-        tgt=goal_target(g); sav=goal_saved(g); pg=sav/tgt*100 if tgt>0 else 0
-        pdf.set_fill_color(240,252,245) if i%2==0 else pdf.set_fill_color(255,255,255)
-        pdf.set_font("Helvetica","",9); pdf.set_text_color(30,30,30)
-        pdf.cell(70,7,_p(f"  {g['name'][:28]}"),fill=True)
-        pdf.cell(30,7,_p(g.get("priority","")),fill=True)
-        pdf.cell(30,7,_p(f"${tgt:,.0f}"),fill=True); pdf.cell(30,7,_p(f"${sav:,.0f}"),fill=True)
-        pdf.set_text_color(5,100,70); pdf.set_font("Helvetica","B",9)
-        pdf.cell(20,7,_p(f"{pg:.0f}%"),fill=True,ln=True); pdf.set_text_color(30,30,30)
-    pdf.ln(5); pdf.set_font("Helvetica","I",8); pdf.set_text_color(150,150,150)
-    pdf.cell(0,5,_p("Seralung Finance | Educational use only. Not financial advice. Consult a qualified adviser."),ln=True)
+        tgt=goal_target(g); sav=goal_saved(g); pg=min(100,sav/tgt*100) if tgt>0 else 0
+        rem=max(0,tgt-sav); mo_g=math.ceil(rem/investable_)
+        eta=f"{mo_g}mo" if rem>0 else "Done"
+        pdf.set_fill_color(242,252,246) if i%2==0 else pdf.set_fill_color(255,255,255)
+        pdf.set_font("Helvetica","",9); pdf.set_text_color(50,50,50)
+        pdf.cell(70,7,_p(f"  {g['name'][:25]}"),fill=True)
+        pdf.cell(24,7,_p(g.get("priority","Med")),fill=True)
+        pdf.cell(28,7,_p(fmt(tgt)),fill=True); pdf.cell(28,7,_p(fmt(sav)),fill=True)
+        pdf.set_font("Helvetica","B",9); pdf.set_text_color(5,100,70)
+        pdf.cell(22,7,_p(f"{pg:.0f}%"),fill=True)
+        pdf.set_font("Helvetica","",9); pdf.set_text_color(50,50,50)
+        pdf.cell(18,7,_p(eta),fill=True,ln=True)
+    pdf.set_text_color(30,30,30)
+
+    # Goals chart
+    if st.session_state.goals:
+        names=[g["name"][:18] for g in st.session_state.goals]
+        saved_=[goal_saved(g) for g in st.session_state.goals]
+        remain=[max(0,goal_target(g)-goal_saved(g)) for g in st.session_state.goals]
+        fig_g=go.Figure()
+        fig_g.add_trace(go.Bar(name="Saved",y=names,x=saved_,orientation="h",marker_color="#059669"))
+        fig_g.add_trace(go.Bar(name="Remaining",y=names,x=remain,orientation="h",marker_color="#E5E7EB"))
+        fig_g.update_layout(barmode="stack",paper_bgcolor="#ffffff",plot_bgcolor="#ffffff",
+            height=max(220,len(names)*55),margin=dict(l=10,r=20,t=20,b=20),
+            font=dict(family="Inter,sans-serif",color="#374151",size=12),
+            legend=dict(orientation="h"),xaxis=dict(tickprefix="$"))
+        _pdf_img(pdf,_fig_png(fig_g,1100,max(280,len(names)*65)))
+
+    # ── PAGE 4: Investment Projection ─────────────────────────────────────────
+    pdf.add_page()
+    pdf.set_fill_color(10,62,44); pdf.rect(0,0,210,12,"F")
+    pdf.set_font("Helvetica","B",11); pdf.set_text_color(200,255,225)
+    pdf.cell(0,12,_p("  Seralung Finance   |   Investment Projection & Risk"),ln=True)
+    pdf.set_text_color(30,30,30); pdf.ln(4)
+
+    # Investment summary
+    sec(pdf,"Investment Profile")
+    ret_age_=st.session_state.get("retirement_age",65); yrs_left_=max(1,ret_age_-age_val)
+    exp_mu_={"Conservative":0.055,"Moderate":0.07,"Growth":0.09,"Aggressive":0.12}.get(risk_sel,0.07)
+    row2(pdf,"Risk Profile",risk_sel,alt=True)
+    row2(pdf,"Age / Retirement Age",f"{age_val} / {ret_age_}")
+    row2(pdf,"Years to Retirement",f"{yrs_left_} years",alt=True)
+    row2(pdf,"Monthly Investable",fmt(investable))
+    row2(pdf,"Expected Return (assumed)",f"{exp_mu_*100:.1f}% p.a.",alt=True)
+    row2(pdf,"Annual Investable",fmt(investable*12))
+
+    # 25-year projection
+    pdf.ln(3); sec(pdf,"25-Year Growth Projection")
+    yrs=list(range(26))
+    def cmpd(r):
+        v,res=float(sum(a["value"] for a in st.session_state.assets if a["type"] in ["Investments","Savings","Super"])),[]
+        for _ in yrs: res.append(round(v)); v=(v+investable*12)*(1+r)
+        return res
+    c4_=cmpd(0.04); c7_=cmpd(0.07); c10_=cmpd(0.10); c_r=cmpd(exp_mu_)
+    fig_p=go.Figure()
+    fig_p.add_trace(go.Scatter(x=yrs,y=c4_,name="Conservative 4%",mode="lines",line=dict(color="#6B7280",width=1.5,dash="dot")))
+    fig_p.add_trace(go.Scatter(x=yrs,y=c7_,name="Moderate 7%",mode="lines",line=dict(color="#2563EB",width=2,dash="dash")))
+    fig_p.add_trace(go.Scatter(x=yrs,y=c10_,name="Growth 10%",mode="lines",line=dict(color="#D97706",width=2)))
+    fig_p.add_trace(go.Scatter(x=yrs,y=c_r,name=f"Your profile ({exp_mu_*100:.1f}%)",mode="lines",
+        line=dict(color="#059669",width=3),fill="tozeroy",fillcolor="rgba(5,150,105,0.07)"))
+    fig_p.update_layout(paper_bgcolor="#ffffff",plot_bgcolor="#ffffff",
+        height=380,margin=dict(l=20,r=20,t=20,b=30),
+        font=dict(family="Inter,sans-serif",color="#374151",size=12),
+        legend=dict(orientation="h",y=-0.18),
+        xaxis=dict(title="Years",tickvals=[0,5,10,15,20,25]),
+        yaxis=dict(tickprefix="$",tickformat=",.0f"))
+    _pdf_img(pdf,_fig_png(fig_p,1100,410)); pdf.ln(3)
+
+    # Milestone table
+    sec(pdf,"Portfolio Milestones")
+    pdf.set_fill_color(5,100,70); pdf.set_text_color(255,255,255); pdf.set_font("Helvetica","B",9)
+    for h_,w_ in [("Year",18),("Conservative 4%",43),("Moderate 7%",43),("Growth 10%",43),("Your Profile",43)]:
+        pdf.cell(w_,7,_p(h_),fill=True)
+    pdf.ln()
+    for i,yr in enumerate([1,3,5,10,15,20,25]):
+        pdf.set_fill_color(242,252,246) if i%2==0 else pdf.set_fill_color(255,255,255)
+        pdf.set_font("Helvetica","",9); pdf.set_text_color(50,50,50)
+        pdf.cell(18,7,_p(f"  {yr}"),fill=True)
+        pdf.cell(43,7,_p(fmt(c4_[yr])),fill=True); pdf.cell(43,7,_p(fmt(c7_[yr])),fill=True)
+        pdf.cell(43,7,_p(fmt(c10_[yr])),fill=True)
+        pdf.set_font("Helvetica","B",9); pdf.set_text_color(5,100,70)
+        pdf.cell(43,7,_p(fmt(c_r[yr])),fill=True,ln=True)
+    pdf.set_text_color(30,30,30); pdf.ln(3)
+
+    # Investment recommendations
+    sec(pdf,f"Investment Recommendations  -  {risk_sel} Profile")
+    guide=INVEST_GUIDE.get(risk_sel,INVEST_GUIDE["Moderate"])
+    pdf.set_font("Helvetica","I",9); pdf.set_text_color(80,80,80)
+    pdf.multi_cell(0,5,_p(guide["summary"])); pdf.ln(2)
+    pdf.set_fill_color(5,100,70); pdf.set_text_color(255,255,255); pdf.set_font("Helvetica","B",9)
+    for h_,w_ in [("  Asset Class",60),("Alloc",18),("Why",62),("Products",50)]: pdf.cell(w_,7,_p(h_),fill=True)
+    pdf.ln()
+    for i,(name,alloc_pct,why,products,_) in enumerate(guide["items"]):
+        mo_=investable*alloc_pct/100
+        pdf.set_fill_color(242,252,246) if i%2==0 else pdf.set_fill_color(255,255,255)
+        pdf.set_font("Helvetica","",8.5); pdf.set_text_color(50,50,50)
+        pdf.cell(60,7,_p(name[:28]),fill=True)
+        pdf.set_font("Helvetica","B",8.5); pdf.set_text_color(5,100,70)
+        pdf.cell(18,7,_p(f"{alloc_pct}%"),fill=True)
+        pdf.set_font("Helvetica","",8.5); pdf.set_text_color(50,50,50)
+        pdf.cell(62,7,_p(why[:38]),fill=True)
+        pdf.cell(50,7,_p(products[0][:24]),fill=True,ln=True)
+    pdf.ln(2)
+    pdf.set_font("Helvetica","B",9); pdf.set_text_color(5,100,70)
+    pdf.cell(0,7,_p("Superannuation Tip:"),ln=True)
+    pdf.set_font("Helvetica","",8.5); pdf.set_text_color(60,60,60)
+    pdf.multi_cell(0,5,_p(guide["super"])); pdf.ln(2)
+    avoid_txt="Avoid: " + ", ".join(guide["avoid"])
+    pdf.set_font("Helvetica","I",8.5); pdf.set_text_color(185,28,28)
+    pdf.multi_cell(0,5,_p(avoid_txt))
+
+    # FIRE
+    pdf.ln(3); sec(pdf,"FIRE Calculator (Financial Independence)")
+    ann_exp_=total_exp*12; fire_t_=ann_exp_*25; fi_r_=cur_p_/fire_t_*100 if fire_t_>0 else 0
+    cur_p_=float(sum(a["value"] for a in st.session_state.assets if a["type"] in ["Investments","Savings"]))
+    for i,(l,v) in enumerate([("Annual Expenses",fmt(ann_exp_)),("FIRE Number (25x)",fmt(fire_t_)),
+            ("Current Portfolio",fmt(cur_p_)),("FI Ratio",f"{fi_r_:.1f}%"),
+            ("Years to FIRE (at 7%)",f"{next((yr for yr in range(51) if (lambda v2:v2)(cur_p_*(1.07**yr)+investable*12*((1.07**yr-1)/0.07))>=fire_t_), 'N/A')} yrs")]):
+        row2(pdf,l,v,i%2==0,green=("FIRE" in l or "FI" in l))
+
+    # Footer
+    pdf.ln(6); pdf.set_font("Helvetica","I",8); pdf.set_text_color(150,150,150)
+    pdf.cell(0,5,_p("Seralung Finance  |  Educational use only. Not financial advice. Always consult a qualified financial adviser.  |  AUS Tax FY2024-25"),ln=True)
     return bytes(pdf.output())
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1160,6 +1559,52 @@ with t4:
         if st.button("Add liability",use_container_width=True):
             if new_ln: st.session_state.liabilities.append({"name":new_ln,"balance":float(new_lb),"rate":float(new_lr),"type":new_lt,"min_payment":0.0}); st.rerun()
         st.markdown("</div>",unsafe_allow_html=True)
+
+    # ── Investment Recommendations (full width, below the two columns) ──────────
+    st.markdown("<div style='height:.5rem'></div>",unsafe_allow_html=True)
+    st.markdown(f"<div class='card'><span class='clabel'>Investment Recommendations — {risk_sel} Profile · Age {age_val} · {fmt(investable)}/month available</span>",unsafe_allow_html=True)
+    guide=INVEST_GUIDE.get(risk_sel,INVEST_GUIDE["Moderate"])
+    # Emergency fund warning
+    if em_months<3:
+        st.markdown(f"<div class='tip' style='border-color:{RD};background:{h2r(RD,0.06)};'>"
+                    f"<b>Important:</b> Your emergency fund is only {em_months:.1f} months. "
+                    f"Put <b>100% of investable funds into a high-yield savings account</b> until you have 3+ months covered. "
+                    f"Target: <b>{fmt(total_exp*3)}</b> minimum.</div>",unsafe_allow_html=True)
+    elif em_months<6:
+        st.markdown(f"<div class='tip'><b>Tip:</b> Allocate ~20% to savings until emergency fund reaches 6 months ({fmt(total_exp*6)}).</div>",unsafe_allow_html=True)
+    # High debt warning
+    hi_debt=[l for l in st.session_state.liabilities if l.get("rate",0)>10]
+    if hi_debt:
+        st.markdown(f"<div class='tip' style='border-color:{AM};background:{h2r(AM,0.06)};'>"
+                    f"<b>High-interest debt detected:</b> {fmt(sum(l['balance'] for l in hi_debt))} at >10% APR. "
+                    f"Paying this off = guaranteed {max(l['rate'] for l in hi_debt):.0f}% return. "
+                    f"Consider allocating 50%+ of investable to debt payoff first.</div>",unsafe_allow_html=True)
+    # Summary
+    st.markdown(f"<div style='font-size:.81rem;color:{MU};margin-bottom:.8rem;line-height:1.6;'>{guide['summary']}</div>",unsafe_allow_html=True)
+    # Allocation cards
+    rcols=st.columns(len(guide["items"]) if len(guide["items"])<=5 else 5)
+    COLOR_MAP={"gr":GR,"bl":BL,"am":AM,"rd":RD,"pu":PU}
+    for idx,(name,alloc_pct,why,products,clr) in enumerate(guide["items"]):
+        col=COLOR_MAP.get(clr,BL); mo_=investable*alloc_pct/100
+        with rcols[idx % len(rcols)]:
+            st.markdown(
+                f"<div style='background:{SU};border:1px solid {BO};border-top:3px solid {col};"
+                f"border-radius:10px;padding:.8rem .9rem;margin-bottom:.5rem;height:100%;'>"
+                f"<div style='font-size:.62rem;font-weight:700;color:{col};text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;'>{alloc_pct}% allocation</div>"
+                f"<div style='font-size:.83rem;font-weight:700;color:{TX};margin-bottom:4px;'>{name}</div>"
+                f"<div style='font-size:.7rem;color:{MU};margin-bottom:6px;line-height:1.5;'>{why}</div>"
+                f"<div style='font-size:.62rem;font-weight:700;color:{col};margin-bottom:4px;'>{fmt(mo_)}/mo</div>"
+                f"<div style='font-size:.66rem;color:{MU};line-height:1.6;'>"
+                + "".join(f"· {p}<br>" for p in products[:3]) +
+                f"</div></div>",unsafe_allow_html=True)
+    # Super tip
+    st.markdown(f"<div style='margin-top:.6rem;background:{h2r(GR,0.07)};border:1px solid {h2r(GR,0.2)};"
+                f"border-radius:9px;padding:.6rem .9rem;font-size:.79rem;color:{TX};'>"
+                f"<span style='color:{GR};font-weight:700;'>Super tip: </span>{guide['super']}</div>",unsafe_allow_html=True)
+    # Avoid list
+    st.markdown(f"<div style='margin-top:.5rem;font-size:.73rem;color:{RD};'>"
+                f"<b>Avoid for this profile:</b> {' · '.join(guide['avoid'])}</div>",unsafe_allow_html=True)
+    st.markdown("</div>",unsafe_allow_html=True)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # REPORTS  — dedicated, easy to find
