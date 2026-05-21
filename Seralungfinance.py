@@ -49,7 +49,7 @@ _init_state("goals", [{"name":"Emergency Lock", "target":15000.0, "saved":15000.
 
 theme = THEMES[st.session_state.active_theme]
 
-# Inject styling variables
+# Inject styling variables using correct parameter
 st.markdown(f"""
 <style>
     .stApp {{ background-color: {theme['bg']}; color: {theme['text']}; }}
@@ -61,7 +61,7 @@ st.markdown(f"""
         margin-bottom: 15px;
     }}
 </style>
-""", unsafe_with_html=True)
+""", unsafe_allow_html=True)
 
 # =====================================================================
 # 2. EMBEDDED CORE FINANCIAL ALGORITHMS (NATIVE PYTHON)
@@ -201,7 +201,6 @@ def fmt(n): return f"${n:,.0f}"
 # 3. INTERFACE COMPILATION & VISUAL COMPUTATION
 # =====================================================================
 
-# App Layout Header Banner
 col_t1, col_t2 = st.columns([3, 1])
 with col_t1:
     st.title("Seralung Unified Financial Architecture")
@@ -211,7 +210,6 @@ with col_t2:
 
 st.write("---")
 
-# Process Calculations Natively (No HTTP Networking Latency)
 total_gross_monthly = st.session_state.primary_income + st.session_state.other_income
 annualized_gross = total_gross_monthly * 12
 
@@ -259,13 +257,13 @@ tab_telemetry, tab_allocation, tab_projections = st.tabs([
 with tab_telemetry:
     col_g1, col_g2 = st.columns([1, 2])
     with col_g1:
-        st.markdown("<h4 style='text-align: center;'>Algorithmic Strength Telemetry</h4>", unsafe_with_html=True)
-        st.markdown(render_svg_gauge(health_data["score"], health_data["tier"]), unsafe_with_html=True)
+        st.markdown("<h4 style='text-align: center;'>Algorithmic Strength Telemetry</h4>", unsafe_allow_html=True)
+        st.markdown(render_svg_gauge(health_data["score"], health_data["tier"]), unsafe_allow_html=True)
         st.write("##")
         st.metric(label="Calculated ATO Income Tax Drag (Annual)", value=fmt(tax_res["total_tax_liability"]), delta=f"Effective Drag: {tax_res['effective_tax_rate']}%")
         
     with col_g2:
-        st.markdown("<h4>Telemetry Matrix Subcomponent Ratings Breakdown</h4>", unsafe_with_html=True)
+        st.markdown("<h4>Telemetry Matrix Subcomponent Ratings Breakdown</h4>", unsafe_allow_html=True)
         breakdown_df = pd.DataFrame.from_dict(health_data["breakdown"], orient="index")
         st.dataframe(breakdown_df[["score", "max", "desc", "ok"]], use_container_width=True)
 
@@ -292,7 +290,7 @@ with tab_allocation:
     for asset_name, details in alloc_res["allocations"].items():
         c1, c2, c3 = st.columns([1, 1, 3])
         with c1: st.markdown(f"**{asset_name} ({details['percentage']:.0f}%)**")
-        with c2: st.markdown(f"<span style='color:{theme['accent']}; font-weight:700;'>{fmt(details['amount'])}</span>", unsafe_with_html=True)
+        with c2: st.markdown(f"<span style='color:{theme['accent']}; font-weight:700;'>{fmt(details['amount'])}</span>", unsafe_allow_html=True)
         with c3: st.caption(details["strategy_note"])
 
 with tab_projections:
