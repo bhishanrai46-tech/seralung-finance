@@ -56,7 +56,11 @@ CSS = """
 html,body,[data-testid="stAppViewContainer"],.stApp{background-color:"""+BG+""" !important;color:"""+TEXT+""" !important;font-family:'Inter',sans-serif !important;}
 .block-container{padding-top:2rem !important;padding-bottom:3rem !important;max-width:1120px !important;background-color:"""+BG+""" !important;}
 [data-testid="stSidebar"],[data-testid="stSidebar"]>div,[data-testid="stSidebar"]>div>div{background-color:"""+SIDEBAR+""" !important;border-right:1px solid """+BORDER+""" !important;}
-[data-testid="stSidebar"] *{color:"""+TEXT+""" !important;font-family:'Inter',sans-serif !important;}
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span,
+[data-testid="stSidebar"] label,
+[data-testid="stSidebar"] .stMarkdown,
+[data-testid="stSidebar"] .stText{color:"""+TEXT+""" !important;}
 p,span,li,td,th,a,.stMarkdown{color:"""+TEXT+""" !important;font-family:'Inter',sans-serif !important;}
 h1,h2,h3,h4,h5,h6{font-family:'Playfair Display',serif !important;font-weight:500 !important;color:"""+TEXT+""" !important;letter-spacing:-0.02em !important;line-height:1.2 !important;}
 h2{font-size:1.5rem !important;}
@@ -89,8 +93,16 @@ h2{font-size:1.5rem !important;}
 .stSlider>label{color:"""+TEXT+""" !important;font-family:'Inter',sans-serif !important;}
 [data-testid="stSlider"] [role="slider"]{background-color:"""+ACCENT+""" !important;border:2px solid """+ACCENT+""" !important;}
 [data-testid="stSlider"]>div>div>div{background-color:"""+ACCENT+""" !important;}
-[data-testid="stFileUploadDropzone"]{background-color:"""+CARD+""" !important;border:1px dashed """+BORDER+""" !important;border-radius:6px !important;}
-[data-testid="stFileUploadDropzone"] *{color:"""+TEXT+""" !important;font-family:'Inter',sans-serif !important;}
+[data-testid="stFileUploadDropzone"],
+[data-testid="stFileUploaderDropzone"],
+[data-testid="stFileUploader"],
+[data-testid="stFileUploader"]>div{background-color:"""+CARD+""" !important;border:1px dashed """+BORDER+""" !important;border-radius:6px !important;display:block !important;visibility:visible !important;opacity:1 !important;}
+[data-testid="stFileUploadDropzone"] *,
+[data-testid="stFileUploaderDropzone"] *,
+[data-testid="stFileUploader"] *{color:"""+TEXT+""" !important;font-family:'Inter',sans-serif !important;display:revert !important;visibility:visible !important;}
+[data-testid="stFileUploader"] label,
+[data-testid="stFileUploader"]>label{color:"""+TEXT+""" !important;font-size:0.82rem !important;font-weight:400 !important;display:block !important;}
+[data-testid="stFileUploader"] button{background-color:"""+ACCENT+""" !important;color:#FFFFFF !important;border:none !important;border-radius:4px !important;font-family:'Inter',sans-serif !important;}
 [data-testid="stExpander"]{border:1px solid """+BORDER+""" !important;border-radius:6px !important;background-color:"""+CARD+""" !important;}
 [data-testid="stExpander"] summary,[data-testid="stExpander"] summary *{color:"""+TEXT+""" !important;background-color:"""+CARD+""" !important;}
 [data-testid="stExpander"]>div{background-color:"""+CARD+""" !important;}
@@ -405,29 +417,281 @@ def cat_revenue(df):
 # 8. PRICE OPTIMIZER
 # ═══════════════════════════════════════════════════════════════
 
-MIN_MARGIN=55.0
+MIN_MARGIN = 55.0
 
-def margin_table(txn,costs):
-    if txn.empty or not costs: return pd.DataFrame()
-    df=txn.copy()
-    df["unit_price"]=df.apply(lambda r:r["revenue"]/r["qty"] if r.get("qty",1)>0 else r["revenue"],axis=1)
-    s=df.groupby("item_name").agg(selling_price=("unit_price","mean"),quantity_sold=("qty","sum"),category=("category",lambda x:x.mode()[0] if len(x)>0 else "Other")).reset_index()
-    s["cost_price"]=s["item_name"].map(costs).fillna(0); s=s[s["cost_price"]>0]
-    if s.empty: return pd.DataFrame()
-    s["margin_pct"]=s.apply(lambda r:profit_margin(r["selling_price"],r["cost_price"]),axis=1)
-    s["tier"]=s["margin_pct"].apply(lambda m:"Low" if m<55 else "Fair" if m<65 else "Good" if m<75 else "Strong")
-    return s.sort_values("margin_pct",ascending=True)
+# ── Category price elasticity ──────────────────────────────────────────────
+# How sensitive customers are to price changes per category.
+# 1.0 = very sensitive (avoid increases), 0.3 = low sensitivity (can increase)
+ELASTICITY = {
+    "Coffee":      0.45,   # Habitual, loyal customers — moderate tolerance
+    "Cold Drinks": 0.35,   # Premium positioning — good tolerance
+    "Food":        0.65,   # Customers compare to nearby cafes — cautious
+    "Drinks":      0.70,   # Easily replaced (tap water etc.) — avoid increases
+    "Uncategorized": 0.55,
+}
 
-def price_recs(mdf,bump):
-    if mdf.empty: return pd.DataFrame()
-    rows=[]
-    for _,r in mdf.iterrows():
-        target=min(r["margin_pct"]+bump,85.0); ideal=suggested_price(r["cost_price"],target)
-        cap=round(r["selling_price"]*1.05,2); sugg=max(min(ideal,cap),r["selling_price"])
-        new_m=profit_margin(sugg,r["cost_price"]); inc=sugg-r["selling_price"]
-        gain=(sugg-r["cost_price"]-(r["selling_price"]-r["cost_price"]))*r["quantity_sold"]
-        rows.append({**r.to_dict(),"suggested_price":round(sugg,2),"new_margin_pct":round(new_m,1),"price_increase":round(inc,2),"increase_pct":round((inc/r["selling_price"]*100) if r["selling_price"] else 0,1),"est_profit_gain":round(gain,2)})
+# Psychological price points cafes commonly use
+PSYCH_PRICES = [
+    3.50, 3.80, 4.00, 4.20, 4.50, 4.80,
+    5.00, 5.20, 5.50, 5.80,
+    6.00, 6.20, 6.50, 6.80,
+    7.00, 7.50, 8.00, 8.50, 9.00,
+    10.00, 11.00, 12.00, 13.00, 14.00,
+    15.00, 16.00, 17.00, 18.00, 20.00,
+]
+
+
+def _nearest_psych_price(price: float) -> float:
+    """
+    Round a suggested price to the nearest psychological price point.
+    Cafes never price at $4.57 — it looks calculated and cheap.
+    Returns the nearest price point that is >= the input price.
+    """
+    for p in PSYCH_PRICES:
+        if p >= price:
+            return p
+    return round(price, 0)
+
+
+def classify_menu_items(mdf: pd.DataFrame) -> pd.DataFrame:
+    """
+    Apply Menu Engineering quadrant classification to each item.
+
+    The four quadrants (industry standard since Kasavana & Smith, 1982):
+      Stars       — High margin, high volume. Your best items. Protect them.
+      Ploughhorses— Low margin, high volume. Traffic drivers. Don't raise price.
+                    Focus on cost reduction instead.
+      Puzzles     — High margin, low volume. Profitable but underordered.
+                    Market them better, don't change price.
+      Dogs        — Low margin, low volume. Drain resources. Consider removal.
+
+    Margin threshold: median margin of all items.
+    Volume threshold: median quantity sold.
+    """
+    if mdf.empty:
+        return mdf
+
+    df = mdf.copy()
+    margin_mid = df["margin_pct"].median()
+    volume_mid = df["quantity_sold"].median()
+
+    def _quadrant(row):
+        high_m = row["margin_pct"] >= margin_mid
+        high_v = row["quantity_sold"] >= volume_mid
+        if high_m and high_v:   return "Star"
+        if not high_m and high_v: return "Plowhorse"
+        if high_m and not high_v: return "Puzzle"
+        return "Dog"
+
+    df["quadrant"] = df.apply(_quadrant, axis=1)
+    df["margin_mid"] = round(margin_mid, 1)
+    df["volume_mid"] = round(volume_mid, 0)
+    return df
+
+
+def smart_price_suggestions(mdf: pd.DataFrame) -> pd.DataFrame:
+    """
+    Generate realistic, practical price recommendations.
+
+    Logic per quadrant:
+      Star       → No price change. Already performing. Promote it.
+      Plowhorse  → No price increase. It drives customer traffic.
+                   Recommend cost negotiation or add-on upsell instead.
+      Puzzle     → Small increase possible if elasticity allows.
+                   Primary fix is visibility, not price.
+      Dog        → No price increase. Primary fix is menu removal.
+                   If removal not possible, small increase to discourage orders.
+
+    Additional guards before any price increase is suggested:
+      1. Elasticity check — high-elasticity categories (Food, Drinks) get no increases
+      2. Maximum single increase capped at 3% (not 5%) — conservative
+      3. Result must land on a psychological price point
+      4. New margin must be meaningfully better (at least +3 percentage points)
+      5. Never suggest a price the item has already been at (uses session history)
+
+    Returns a DataFrame with columns:
+      item_name, quadrant, current_price, suggested_price,
+      action_type, reasoning, est_weekly_gain, risk_level
+    """
+    if mdf.empty:
+        return pd.DataFrame()
+
+    df = classify_menu_items(mdf)
+    already_actioned = st.session_state.get("actioned_prices", set())
+    rows = []
+
+    for _, r in df.iterrows():
+        name      = r["item_name"]
+        quadrant  = r["quadrant"]
+        category  = r.get("category", "Uncategorized")
+        price     = r["selling_price"]
+        cost      = r["cost_price"]
+        margin    = r["margin_pct"]
+        qty       = r["quantity_sold"]
+        elasticity = ELASTICITY.get(category, 0.55)
+
+        already_done = name in already_actioned
+
+        # ── Stars: no action, just positive reinforcement ──
+        if quadrant == "Star":
+            rows.append({
+                "item_name":       name,
+                "quadrant":        quadrant,
+                "current_price":   price,
+                "suggested_price": price,
+                "action_type":     "No change needed",
+                "reasoning":       f"Strong margin ({fmt_pct(margin)}) and high sales volume. "
+                                   f"Maintain current pricing and ensure consistent quality.",
+                "est_weekly_gain": 0.0,
+                "risk_level":      "None",
+                "actioned":        already_done,
+            })
+            continue
+
+        # ── Plowhorses: protect price, reduce cost ──
+        if quadrant == "Plowhorse":
+            weekly_qty = qty / max((df["quantity_sold"].sum() / qty), 1)
+            rows.append({
+                "item_name":       name,
+                "quadrant":        quadrant,
+                "current_price":   price,
+                "suggested_price": price,
+                "action_type":     "Reduce cost, not raise price",
+                "reasoning":       f"This item drives customer volume — a price rise risks losing "
+                                   f"regulars. Margin is {fmt_pct(margin)}. Negotiate with your "
+                                   f"supplier for a 5–10% ingredient discount, or review portion "
+                                   f"size. Even a ${cost*0.08:.2f} cost saving per unit improves "
+                                   f"margin without touching the menu price.",
+                "est_weekly_gain": 0.0,
+                "risk_level":      "High if price raised",
+                "actioned":        already_done,
+            })
+            continue
+
+        # ── Dogs: recommend removal, not reprice ──
+        if quadrant == "Dog":
+            rows.append({
+                "item_name":       name,
+                "quadrant":        quadrant,
+                "current_price":   price,
+                "suggested_price": price,
+                "action_type":     "Consider removing from menu",
+                "reasoning":       f"Low margin ({fmt_pct(margin)}) and low sales volume. "
+                                   f"This item occupies kitchen time and ingredient stock without "
+                                   f"contributing meaningfully to revenue. Review whether it serves "
+                                   f"a purpose — if not, retiring it simplifies operations.",
+                "est_weekly_gain": 0.0,
+                "risk_level":      "Low — few customers will notice",
+                "actioned":        already_done,
+            })
+            continue
+
+        # ── Puzzles: possible small price increase ──────────────────────────
+        # Only proceed if elasticity is low enough to absorb a change
+        if elasticity > 0.60:
+            # High-elasticity category — don't raise price, improve visibility instead
+            rows.append({
+                "item_name":       name,
+                "quadrant":        quadrant,
+                "current_price":   price,
+                "suggested_price": price,
+                "action_type":     "Promote — don't reprice",
+                "reasoning":       f"{category} items are price-sensitive. "
+                                   f"The low order volume is a visibility problem, not a pricing one. "
+                                   f"Feature it on the menu board or train staff to recommend it.",
+                "est_weekly_gain": 0.0,
+                "risk_level":      "Medium if price raised",
+                "actioned":        already_done,
+            })
+            continue
+
+        # Calculate a conservative suggested price
+        max_increase_pct = 0.03 * (1 - elasticity)  # more elastic = smaller increase
+        max_price        = round(price * (1 + max_increase_pct), 2)
+        psych            = _nearest_psych_price(price + 0.01)  # at least 1 cent above current
+
+        # If the nearest psych price exceeds our max conservative cap, don't suggest
+        if psych > max_price * 1.02:
+            rows.append({
+                "item_name":       name,
+                "quadrant":        quadrant,
+                "current_price":   price,
+                "suggested_price": price,
+                "action_type":     "Monitor — price already near optimal",
+                "reasoning":       f"Margin is {fmt_pct(margin)} and the next natural price point "
+                                   f"({fmt_currency(_nearest_psych_price(price+0.01))}) would push "
+                                   f"beyond a safe increase for this category. "
+                                   f"Review supplier costs first.",
+                "est_weekly_gain": 0.0,
+                "risk_level":      "Low",
+                "actioned":        already_done,
+            })
+            continue
+
+        new_margin = profit_margin(psych, cost)
+        margin_gain = new_margin - margin
+
+        # Only worth suggesting if margin improvement is meaningful (≥3 pp)
+        if margin_gain < 3.0:
+            rows.append({
+                "item_name":       name,
+                "quadrant":        quadrant,
+                "current_price":   price,
+                "suggested_price": price,
+                "action_type":     "Monitor — marginal improvement only",
+                "reasoning":       f"The available price movement ({fmt_currency(price)} → "
+                                   f"{fmt_currency(psych)}) only improves margin by "
+                                   f"{fmt_pct(margin_gain)}. Not worth the customer friction. "
+                                   f"Focus on cost reduction for better impact.",
+                "est_weekly_gain": 0.0,
+                "risk_level":      "Low",
+                "actioned":        already_done,
+            })
+            continue
+
+        # Genuine opportunity — estimate weekly gain
+        data_weeks = max(qty / 5, 1)   # rough weekly volume estimate
+        weekly_qty = qty / data_weeks
+        weekly_gain = (psych - price) * weekly_qty
+
+        rows.append({
+            "item_name":       name,
+            "quadrant":        quadrant,
+            "current_price":   price,
+            "suggested_price": psych,
+            "action_type":     "Price increase opportunity",
+            "reasoning":       f"High-margin item ({fmt_pct(margin)}) with low volume — "
+                               f"customers are not price-comparing on this one. "
+                               f"Moving from {fmt_currency(price)} to {fmt_currency(psych)} "
+                               f"is a natural price point and lifts margin to {fmt_pct(new_margin)}. "
+                               f"Low risk of customer loss given infrequent ordering.",
+            "est_weekly_gain": round(weekly_gain, 2),
+            "risk_level":      "Low" if elasticity < 0.45 else "Medium",
+            "actioned":        already_done,
+        })
+
     return pd.DataFrame(rows)
+
+
+def margin_table(txn, costs):
+    """Build per-item margin analysis from transactions + cost dict."""
+    if txn.empty or not costs: return pd.DataFrame()
+    df = txn.copy()
+    df["unit_price"] = df.apply(
+        lambda r: r["revenue"]/r["qty"] if r.get("qty",1)>0 else r["revenue"], axis=1)
+    s = df.groupby("item_name").agg(
+        selling_price=("unit_price","mean"),
+        quantity_sold=("qty","sum"),
+        category=("category", lambda x: x.mode()[0] if len(x)>0 else "Other"),
+    ).reset_index()
+    s["cost_price"] = s["item_name"].map(costs).fillna(0)
+    s = s[s["cost_price"] > 0]
+    if s.empty: return pd.DataFrame()
+    s["margin_pct"] = s.apply(
+        lambda r: profit_margin(r["selling_price"], r["cost_price"]), axis=1)
+    s["tier"] = s["margin_pct"].apply(
+        lambda m: "Low" if m<55 else "Fair" if m<65 else "Good" if m<75 else "Strong")
+    return s.sort_values("margin_pct", ascending=True)
 
 # ═══════════════════════════════════════════════════════════════
 # 9. RECOMMENDATIONS
@@ -654,11 +918,8 @@ def render_sidebar():
         po=st.selectbox("Period",["Last 7 days","Last 30 days","Last 90 days","All time"],index=2,label_visibility="collapsed")
         days={"Last 7 days":7,"Last 30 days":30,"Last 90 days":90,"All time":None}[po]
         st.markdown("---")
-        section_tag("PRICE OPTIMIZER")
-        bump=st.slider("Target margin increase (%)",2,15,6,1)
-        st.markdown("---")
         st.markdown(f"<p style='font-family:Inter,sans-serif;font-size:0.68rem;color:{MUTED};letter-spacing:0.02em;'>v1.0.0 · Seralung Opti</p>",unsafe_allow_html=True)
-    return {"days":days,"label":po,"bump":bump}
+    return {"days":days,"label":po}
 
 # ═══════════════════════════════════════════════════════════════
 # 13. PAGE — OVERVIEW
@@ -714,79 +975,262 @@ def pg_overview(txn,costs,settings):
 # 14. PAGE — PRICE CALCULATOR
 # ═══════════════════════════════════════════════════════════════
 
-def pg_price_calc(txn,settings):
-    page_title("Price Calculator","Margin analysis and optimised price recommendations.")
-    if txn.empty: callout("No data loaded. Use the sidebar to upload or load demo data.","info"); return
-    df=txn.copy()
-    df["unit_price"]=df.apply(lambda r:r["revenue"]/r["qty"] if r.get("qty",1)>0 else r["revenue"],axis=1)
-    catalog=df.groupby("item_name").agg(selling_price=("unit_price","mean"),quantity_sold=("qty","sum"),category=("category",lambda x:x.mode()[0] if len(x)>0 else "Other")).reset_index()
-    costs=get_costs(); bump=settings["bump"]
-    t1,t2,t3=st.tabs(["Cost Entry","Margin Analysis","Price Recommendations"])
+def pg_price_calc(txn, settings):
+    page_title("Price Calculator", "Menu engineering analysis and realistic pricing decisions.")
+    if txn.empty:
+        callout("No data loaded. Use the sidebar to upload or load demo data.", "info"); return
+
+    df = txn.copy()
+    df["unit_price"] = df.apply(
+        lambda r: r["revenue"]/r["qty"] if r.get("qty",1)>0 else r["revenue"], axis=1)
+    catalog = df.groupby("item_name").agg(
+        selling_price=("unit_price","mean"),
+        quantity_sold=("qty","sum"),
+        category=("category", lambda x: x.mode()[0] if len(x)>0 else "Other"),
+    ).reset_index()
+
+    costs = get_costs()
+    t1, t2, t3 = st.tabs(["Cost Entry", "Menu Engineering", "Pricing Decisions"])
+
+    # ── Tab 1: Cost Entry ─────────────────────────────────────────────────
     with t1:
-        st.markdown("<br>",unsafe_allow_html=True)
-        callout("Enter the production cost per item (ingredients + direct labor). This enables margin analysis and pricing recommendations.","info")
-        st.markdown("<br>",unsafe_allow_html=True)
+        st.markdown("<br>", unsafe_allow_html=True)
+        callout(
+            "Enter the production cost per item — ingredients plus any direct labor per unit. "
+            "This unlocks the Menu Engineering analysis and pricing decisions.", "info")
+        st.markdown("<br>", unsafe_allow_html=True)
         section_tag("COST PRICES PER ITEM")
-        items=sorted(catalog["item_name"].tolist()); new_costs={}
-        for i in range(0,len(items),4):
-            cols_ui=st.columns(4,gap="small")
-            for col,nm in zip(cols_ui,items[i:i+4]):
+        items = sorted(catalog["item_name"].tolist())
+        new_costs = {}
+        for i in range(0, len(items), 4):
+            cols_ui = st.columns(4, gap="small")
+            for col, nm in zip(cols_ui, items[i:i+4]):
                 with col:
-                    sp=float(catalog.loc[catalog["item_name"]==nm,"selling_price"].values[0])
-                    v=st.number_input(nm.title(),min_value=0.0,max_value=max(round(sp*0.99,2),0.01),value=float(costs.get(nm,0.0)),step=0.10,format="%.2f",key=f"cost_{nm}")
-                    if v>0: new_costs[nm]=v
-        st.markdown("<br>",unsafe_allow_html=True)
+                    sp = float(catalog.loc[catalog["item_name"]==nm, "selling_price"].values[0])
+                    v  = st.number_input(nm.title(), min_value=0.0,
+                                         max_value=max(round(sp*0.99,2), 0.01),
+                                         value=float(costs.get(nm, 0.0)),
+                                         step=0.10, format="%.2f", key=f"cost_{nm}")
+                    if v > 0: new_costs[nm] = v
+        st.markdown("<br>", unsafe_allow_html=True)
         if st.button("Save Cost Prices"):
             if new_costs:
                 set_costs(new_costs)
-                db_save_costs([{"item_name":k,"cost_price":v,"profit_margin":profit_margin(float(catalog.loc[catalog["item_name"]==k,"selling_price"].values[0]),v)} for k,v in new_costs.items()])
+                db_save_costs([{
+                    "item_name": k, "cost_price": v,
+                    "profit_margin": profit_margin(
+                        float(catalog.loc[catalog["item_name"]==k,"selling_price"].values[0]), v)
+                } for k, v in new_costs.items()])
                 st.success(f"Saved {len(new_costs)} cost prices.")
-            else: st.warning("Enter at least one cost price.")
+            else:
+                st.warning("Enter at least one cost price.")
+
+    # ── Tab 2: Menu Engineering ───────────────────────────────────────────
     with t2:
-        st.markdown("<br>",unsafe_allow_html=True)
-        if not costs: callout("Enter cost prices in the Cost Entry tab first.","info")
+        st.markdown("<br>", unsafe_allow_html=True)
+        if not costs:
+            callout("Enter cost prices in the Cost Entry tab first.", "info")
         else:
-            mdf=margin_table(txn,costs)
-            if mdf.empty: callout("No items with cost data found.","info")
+            mdf = margin_table(txn, costs)
+            if mdf.empty:
+                callout("No items with cost data found.", "info")
             else:
-                avg_m=mdf["margin_pct"].mean(); low_n=(mdf["margin_pct"]<MIN_MARGIN).sum(); best=mdf.loc[mdf["margin_pct"].idxmax()]
-                k1,k2,k3=st.columns(3,gap="small")
-                with k1: st.metric("Average Margin",fmt_pct(avg_m))
-                with k2: st.metric("Items Below Target",f"{low_n} items")
-                with k3: st.metric("Best Margin Item",f"{best['item_name'].title()} ({fmt_pct(best['margin_pct'])})")
-                st.markdown("<br>",unsafe_allow_html=True)
-                section_tag("COST VS SELLING PRICE")
-                st.plotly_chart(chart_cost_vs_price(mdf[["item_name","cost_price","selling_price"]].head(14)),use_container_width=True)
-                st.markdown("<br>",unsafe_allow_html=True)
-                section_tag("FULL MARGIN TABLE")
-                d2=mdf[["item_name","category","selling_price","cost_price","margin_pct","tier"]].copy()
-                d2.columns=["Item","Category","Selling Price","Cost Price","Margin %","Tier"]
-                d2["Selling Price"]=d2["Selling Price"].apply(fmt_currency); d2["Cost Price"]=d2["Cost Price"].apply(fmt_currency); d2["Margin %"]=d2["Margin %"].apply(fmt_pct)
-                html_table(d2)
-    with t3:
-        st.markdown("<br>",unsafe_allow_html=True)
-        if not costs: callout("Enter cost prices in the Cost Entry tab first.","info")
-        else:
-            mdf=margin_table(txn,costs)
-            if mdf.empty: callout("No items with cost data found.","info")
-            else:
-                opt=price_recs(mdf,bump); annual=opt["est_profit_gain"].sum()*13
-                if annual>0: callout(f"Applying all suggested price changes could generate an additional <strong>{fmt_currency(annual)}</strong> in gross profit over 12 months.","success")
-                hi=mdf[mdf["margin_pct"]>70].sort_values("margin_pct",ascending=False).head(5)
-                if not hi.empty:
-                    st.markdown("<br>",unsafe_allow_html=True); section_tag("HIGH-PERFORMING ITEMS — PROMOTE THESE")
-                    hcols=st.columns(min(len(hi),5),gap="small")
-                    for col,(_,r) in zip(hcols,hi.iterrows()):
-                        with col: card_html(f"<p style='font-family:Inter,sans-serif;font-size:0.78rem;font-weight:600;color:{TEXT};margin:0 0 0.2rem;letter-spacing:0.01em;'>{r['item_name'].title()}</p><p style='font-family:Playfair Display,serif;font-size:1.1rem;color:{TEXT};margin:0;font-weight:500;'>{fmt_pct(r['margin_pct'])}</p><p style='font-family:Inter,sans-serif;font-size:0.68rem;color:{MUTED};margin:0.12rem 0 0;letter-spacing:0.02em;'>{r['tier']} performer</p>")
-                st.markdown("<br>",unsafe_allow_html=True); section_tag("PRICE ADJUSTMENT RECOMMENDATIONS")
-                needs=opt[opt["price_increase"]>0]
-                if needs.empty: callout("All items are at or above the target margin. No changes needed.","success")
-                else:
-                    d2=needs[["item_name","selling_price","suggested_price","price_increase","increase_pct","margin_pct","new_margin_pct","est_profit_gain"]].copy()
-                    d2.columns=["Item","Current","Suggested","Increase ($)","Increase (%)","Current Margin","New Margin","Est. Gain"]
-                    for c in ["Current","Suggested","Increase ($)","Est. Gain"]: d2[c]=d2[c].apply(fmt_currency)
-                    for c in ["Increase (%)","Current Margin","New Margin"]: d2[c]=d2[c].apply(fmt_pct)
+                classified = classify_menu_items(mdf)
+
+                # Explain the framework
+                callout(
+                    "<strong>Menu Engineering</strong> classifies every item by two dimensions: "
+                    "gross margin and sales volume. This tells you <em>what action to take</em> — "
+                    "not just whether the margin is low. A low-margin item that sells 60 times a week "
+                    "needs a completely different treatment than one that sells 3 times a week.", "info")
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Quadrant summary counts
+                q_counts = classified["quadrant"].value_counts()
+                k1,k2,k3,k4 = st.columns(4, gap="small")
+                QUAD_DESC = {
+                    "Star":       ("Star",       "High margin · High volume"),
+                    "Plowhorse":  ("Plowhorse",  "Low margin · High volume"),
+                    "Puzzle":     ("Puzzle",      "High margin · Low volume"),
+                    "Dog":        ("Dog",         "Low margin · Low volume"),
+                }
+                for col, (q, (label, desc)) in zip([k1,k2,k3,k4], QUAD_DESC.items()):
+                    with col:
+                        card_html(
+                            f"<p style='font-family:Inter,sans-serif;font-size:0.68rem;"
+                            f"font-weight:700;color:{MUTED};text-transform:uppercase;"
+                            f"letter-spacing:0.08em;margin:0 0 0.2rem;'>{label}</p>"
+                            f"<p style='font-family:Playfair Display,serif;font-size:1.6rem;"
+                            f"color:{TEXT};margin:0;font-weight:500;'>"
+                            f"{q_counts.get(q, 0)}</p>"
+                            f"<p style='font-family:Inter,sans-serif;font-size:0.72rem;"
+                            f"color:{MUTED};margin:0.15rem 0 0;'>{desc}</p>"
+                        )
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Quadrant breakdown tables
+                for quadrant, action_text, kind in [
+                    ("Star",
+                     "These are your best items. High margin and high volume. "
+                     "Protect their quality, keep them priced where they are, and make sure "
+                     "they are prominently placed on your menu.",
+                     "success"),
+                    ("Plowhorse",
+                     "These sell well but eat into margin. They bring customers through the door "
+                     "— do not raise their price. Negotiate ingredient costs with your supplier instead. "
+                     "Even a 10% cost reduction makes a significant impact.",
+                     "warning"),
+                    ("Puzzle",
+                     "Good margins but low order volume. The fix is visibility, not price. "
+                     "Put them on the specials board, train staff to mention them, or bundle them "
+                     "with a popular item.",
+                     "info"),
+                    ("Dog",
+                     "Low margin and low volume. These items cost you kitchen time and stock "
+                     "without meaningful return. Review each one and consider retiring it.",
+                     "danger"),
+                ]:
+                    grp = classified[classified["quadrant"] == quadrant]
+                    if grp.empty: continue
+                    section_tag(f"{quadrant.upper()}S  ({len(grp)} items)")
+                    callout(action_text, kind)
+                    d2 = grp[["item_name","category","selling_price",
+                               "cost_price","margin_pct","quantity_sold"]].copy()
+                    d2.columns = ["Item","Category","Price","Cost","Margin %","Units Sold"]
+                    d2["Price"]    = d2["Price"].apply(fmt_currency)
+                    d2["Cost"]     = d2["Cost"].apply(fmt_currency)
+                    d2["Margin %"] = d2["Margin %"].apply(fmt_pct)
+                    d2["Units Sold"] = d2["Units Sold"].apply(lambda x: f"{int(x):,}")
                     html_table(d2)
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── Tab 3: Pricing Decisions ──────────────────────────────────────────
+    with t3:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if not costs:
+            callout("Enter cost prices in the Cost Entry tab first.", "info")
+        else:
+            mdf = margin_table(txn, costs)
+            if mdf.empty:
+                callout("No items with cost data found.", "info")
+            else:
+                suggestions = smart_price_suggestions(mdf)
+                if suggestions.empty:
+                    callout("No pricing analysis available.", "info")
+                    return
+
+                callout(
+                    "Each item has been assessed individually using its quadrant, category price "
+                    "sensitivity, volume, and realistic psychological price points. "
+                    "<strong>Price increases are only recommended where the risk is genuinely low.</strong> "
+                    "For high-volume items, cost reduction is always recommended over raising price.", "info")
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Mark as actioned button logic
+                if "actioned_prices" not in st.session_state:
+                    st.session_state["actioned_prices"] = set()
+
+                # Genuine price increase opportunities (Puzzle quadrant only)
+                opportunities = suggestions[
+                    (suggestions["action_type"] == "Price increase opportunity") &
+                    (~suggestions["actioned"])
+                ]
+
+                if not opportunities.empty:
+                    section_tag("PRICE INCREASE OPPORTUNITIES")
+                    callout(
+                        f"<strong>{len(opportunities)} item(s)</strong> have been identified as "
+                        f"genuine, low-risk price increase candidates. These are Puzzle items — "
+                        f"high-margin but infrequently ordered, meaning customers are not "
+                        f"price-comparing on them.", "success")
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                    for _, row in opportunities.iterrows():
+                        nm       = row["item_name"]
+                        curr     = row["current_price"]
+                        sugg     = row["suggested_price"]
+                        risk     = row["risk_level"]
+                        reasoning = row["reasoning"]
+                        gain     = row["est_weekly_gain"]
+
+                        risk_color = SUCCESS if risk == "Low" else WARNING
+                        st.markdown(
+                            f"<div style='background:{CARD};border:1px solid {BORDER};"
+                            f"border-left:3px solid {ACCENT};border-radius:0 6px 6px 0;"
+                            f"padding:1rem 1.3rem;margin-bottom:0.75rem;'>"
+                            f"<div style='display:flex;justify-content:space-between;"
+                            f"align-items:center;margin-bottom:0.5rem;'>"
+                            f"<p style='font-family:Playfair Display,serif;font-size:0.95rem;"
+                            f"color:{TEXT};margin:0;font-weight:500;'>{nm.title()}</p>"
+                            f"<span style='font-family:Inter,sans-serif;font-size:0.78rem;"
+                            f"color:{ACCENT};font-weight:600;'>"
+                            f"{fmt_currency(curr)} → {fmt_currency(sugg)}</span></div>"
+                            f"<p style='font-family:Inter,sans-serif;font-size:0.82rem;"
+                            f"color:{MUTED};margin:0 0 0.5rem;line-height:1.55;'>{reasoning}</p>"
+                            f"<div style='display:flex;gap:1.5rem;'>"
+                            f"<p style='font-family:Inter,sans-serif;font-size:0.75rem;"
+                            f"color:{MUTED};margin:0;'>Est. weekly gain: "
+                            f"<strong style='color:{TEXT};'>{fmt_currency(gain)}</strong></p>"
+                            f"<p style='font-family:Inter,sans-serif;font-size:0.75rem;"
+                            f"color:{risk_color};margin:0;font-weight:600;'>Risk: {risk}</p>"
+                            f"</div></div>",
+                            unsafe_allow_html=True,
+                        )
+
+                    # Bulk mark-as-done
+                    if st.button("Mark all price opportunities as reviewed"):
+                        for _, row in opportunities.iterrows():
+                            st.session_state["actioned_prices"].add(row["item_name"])
+                        st.success("Marked as reviewed. These will not reappear until you clear them.")
+
+                else:
+                    callout(
+                        "No price increase opportunities identified right now. "
+                        "This is a good sign — your pricing is either already optimised, "
+                        "or the volume on candidate items is too high to risk a change.",
+                        "success")
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # Cost reduction priorities (Plowhorses)
+                plowhorses = suggestions[suggestions["action_type"] == "Reduce cost, not raise price"]
+                if not plowhorses.empty:
+                    section_tag("COST REDUCTION PRIORITIES")
+                    callout(
+                        "These items sell well but have thin margins. "
+                        "<strong>Raising their price would drive customers away.</strong> "
+                        "The right lever here is supplier negotiation or portion review.", "warning")
+
+                    d2 = plowhorses[["item_name","current_price","reasoning"]].copy()
+                    d2.columns = ["Item","Current Price","Recommended Action"]
+                    d2["Current Price"] = d2["Current Price"].apply(fmt_currency)
+                    html_table(d2)
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                # Removal candidates (Dogs)
+                dogs = suggestions[suggestions["action_type"] == "Consider removing from menu"]
+                if not dogs.empty:
+                    section_tag("MENU REMOVAL CANDIDATES")
+                    callout(
+                        "These items have both low margin and low sales volume. "
+                        "Removing them reduces complexity, waste, and kitchen time.", "danger")
+                    d2 = dogs[["item_name","current_price","reasoning"]].copy()
+                    d2.columns = ["Item","Current Price","Rationale"]
+                    d2["Current Price"] = d2["Current Price"].apply(fmt_currency)
+                    html_table(d2)
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+                # Already actioned items
+                actioned = suggestions[suggestions["actioned"] == True]
+                if not actioned.empty:
+                    with st.expander(f"Previously reviewed ({len(actioned)} items)"):
+                        d2 = actioned[["item_name","action_type"]].copy()
+                        d2.columns = ["Item","Status"]
+                        html_table(d2)
+                    if st.button("Clear reviewed list"):
+                        st.session_state["actioned_prices"] = set()
+                        st.success("Cleared. All items will appear fresh on next load.")
 
 # ═══════════════════════════════════════════════════════════════
 # 15. PAGE — RECOMMENDATIONS
