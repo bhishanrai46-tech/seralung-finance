@@ -1363,4 +1363,4 @@ def main():
     with tab3: pg_recommendations(txn)
     with tab4: pg_reports(txn,costs)
 
-main()
+main()s
