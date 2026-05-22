@@ -94,15 +94,24 @@ h2{font-size:1.5rem !important;}
 [data-testid="stSlider"] [role="slider"]{background-color:"""+ACCENT+""" !important;border:2px solid """+ACCENT+""" !important;}
 [data-testid="stSlider"]>div>div>div{background-color:"""+ACCENT+""" !important;}
 [data-testid="stFileUploadDropzone"],
-[data-testid="stFileUploaderDropzone"],
-[data-testid="stFileUploader"],
-[data-testid="stFileUploader"]>div{background-color:"""+CARD+""" !important;border:1px dashed """+BORDER+""" !important;border-radius:6px !important;display:block !important;visibility:visible !important;opacity:1 !important;}
-[data-testid="stFileUploadDropzone"] *,
-[data-testid="stFileUploaderDropzone"] *,
-[data-testid="stFileUploader"] *{color:"""+TEXT+""" !important;font-family:'Inter',sans-serif !important;display:revert !important;visibility:visible !important;}
+[data-testid="stFileUploaderDropzone"]{
+    background-color:"""+CARD+""" !important;
+    border:1px dashed """+BORDER+""" !important;
+    border-radius:6px !important;
+}
 [data-testid="stFileUploader"] label,
-[data-testid="stFileUploader"]>label{color:"""+TEXT+""" !important;font-size:0.82rem !important;font-weight:400 !important;display:block !important;}
-[data-testid="stFileUploader"] button{background-color:"""+ACCENT+""" !important;color:#FFFFFF !important;border:none !important;border-radius:4px !important;font-family:'Inter',sans-serif !important;}
+[data-testid="stFileUploader"] p,
+[data-testid="stFileUploader"] span,
+[data-testid="stFileUploader"] small{
+    color:"""+TEXT+""" !important;
+    font-family:'Inter',sans-serif !important;
+}
+[data-testid="stFileUploader"] button{
+    background-color:"""+ACCENT+""" !important;
+    color:#FFFFFF !important;
+    border:none !important;
+    border-radius:4px !important;
+}
 [data-testid="stExpander"]{border:1px solid """+BORDER+""" !important;border-radius:6px !important;background-color:"""+CARD+""" !important;}
 [data-testid="stExpander"] summary,[data-testid="stExpander"] summary *{color:"""+TEXT+""" !important;background-color:"""+CARD+""" !important;}
 [data-testid="stExpander"]>div{background-color:"""+CARD+""" !important;}
@@ -904,7 +913,12 @@ def render_sidebar():
         st.markdown(f"<div style='padding:1rem 0 1.25rem;'><p style='font-family:Playfair Display,serif;font-size:1.2rem;color:{TEXT};margin:0;letter-spacing:-0.02em;font-weight:500;'>Seralung Opti</p><p style='font-family:Inter,sans-serif;font-size:0.68rem;color:{MUTED};margin-top:0.15rem;letter-spacing:0.04em;font-weight:400;'>Cafe Business Intelligence</p></div>",unsafe_allow_html=True)
         st.markdown("---")
         section_tag("IMPORT DATA")
-        uploaded=st.file_uploader("Upload POS / CSV export",type=["csv"],help="Columns: item_name, qty, revenue, sold_at")
+        uploaded=st.file_uploader(
+            "Upload POS / CSV export",
+            type=["csv"],
+            label_visibility="visible",
+            help="Columns: item_name, qty, revenue, sold_at"
+        )
         if uploaded:
             try:
                 raw=pd.read_csv(uploaded); cleaned=clean_df(raw)
@@ -1363,4 +1377,4 @@ def main():
     with tab3: pg_recommendations(txn)
     with tab4: pg_reports(txn,costs)
 
-main()s
+main()
