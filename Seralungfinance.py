@@ -70,11 +70,11 @@ DEFAULTS = {
     "risk_score":    0,
     "risk_profile":  "",
     "profile_done":  False,
-    "aus_shares":    0,     # Portfolio: Australian shares value
-    "intl_shares":   0,     # Portfolio: International shares value
-    "property":      0,     # Portfolio: Property and REITs value
-    "fixed_income":  0,     # Portfolio: Fixed income and bonds value
-    "cash":          0,     # Portfolio: Cash and term deposits value
+    "aus_shares":    0.0,     # Portfolio: Australian shares value
+    "intl_shares":   0.0,     # Portfolio: International shares value
+    "property":      0.0,     # Portfolio: Property and REITs value
+    "fixed_income":  0.0,     # Portfolio: Fixed income and bonds value
+    "cash":          0.0,     # Portfolio: Cash and term deposits value
     "currency":      "AUD",
 }
 for k, v in DEFAULTS.items():
@@ -1034,8 +1034,8 @@ with tab2:
                 )
                 st.number_input(
                     label=name,
-                    min_value=0,
-                    step=1000,
+                    min_value=0.0,
+                    step=1000.0,
                     key=key,
                     label_visibility="collapsed",
                 )
@@ -1099,15 +1099,26 @@ with tab2:
             for asset, value in holdings.items():
                 if value == 0: continue
                 pct = value / total * 100
-                if pct > 60:
+                
+                # Check for growth asset concentration (> 40%)
+                if asset in ["Australian Shares", "International Shares", "Property & REITs"] and pct > 40.0:
                     advisor_quote(
-                        f"{asset} represents {pct:.1f}% of your portfolio. "
-                        f"This is a significant concentration. Even excellent asset classes experience "
-                        f"prolonged downturns — Australian shares fell and stayed below 2007 peaks for years. "
-                        f"Concentration of this magnitude warrants careful consideration in the analysis tab.",
-                        kind="caution",
+                        f"Your portfolio has a significant concentration in <strong>{asset}</strong> ({pct:.1f}%). "
+                        f"While high concentration can accelerate wealth accumulation when the asset performs, "
+                        f"it removes your defense against systemic sector drawdowns. In professional wealth practice, "
+                        f"any allocation exceeding 40% in a growth asset class requires explicit justification "
+                        f"and careful correlation monitoring.",
+                        kind="caution"
                     )
-                    break
+                # Check for cash drag (> 50%)
+                elif asset == "Cash & Term Deposits" and pct > 50.0:
+                    advisor_quote(
+                        f"Your cash holding is remarkably high ({pct:.1f}%). "
+                        f"While this provides total liquidity and short-term capital protection, it represents a meaningful "
+                        f"long-term drag on your purchasing power. Over time, inflation systematically erodes the real value of cash "
+                        f"assets. Consider if a portion of this buffer can be allocated to interest-bearing or growth assets.",
+                        kind="warning"
+                    )
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -1117,143 +1128,129 @@ with tab2:
 with tab3:
 
     if not st.session_state["profile_done"]:
-        banner("Complete the Risk Assessment first.", "info")
+        banner("Complete the Risk Assessment in Tab 1 first to unlock allocation analysis.", "info")
     elif total_portfolio() == 0:
-        banner("Enter your current holdings in the My Portfolio tab to unlock this analysis.", "info")
+        banner("Enter your portfolio holdings in Tab 2 first to analyze your allocation.", "info")
     else:
         profile_name = st.session_state["risk_profile"]
-        profile      = PROFILES[profile_name]
-        targets      = profile["targets"]
-        holdings     = portfolio_values()
-        total        = total_portfolio()
-
+        profile = PROFILES[profile_name]
+        targets = profile["targets"]
+        holdings = portfolio_values()
+        total = total_portfolio()
+        
         advisor_quote(
-            f"Your risk profile is <strong>{profile_name}</strong>. "
-            f"What follows is a comparison between where your capital currently sits "
-            f"and where it would ideally be positioned for your profile. "
-            f"The gaps — both overweights and underweights — are where the actionable decisions live.",
-            kind="wisdom",
+            f"Asset allocation explains over 90% of the variability in long-term portfolio returns. "
+            f"By comparing your current assets to the <strong>{profile_name}</strong> target, we identify where "
+            f"your portfolio has drifted from its intended risk tolerance. Our objective is not to eliminate "
+            f"every single dollar of variance, but to prevent major structural drifts that expose you to unwanted risk.",
+            kind="wisdom"
         )
-
-        section_label("Current vs Target Allocation")
-
-        # Grouped bar chart
-        current_pcts = [holdings.get(a, 0) / total * 100 for a in ASSET_NAMES]
-        target_pcts  = [targets.get(a, 0)              for a in ASSET_NAMES]
-
-        fig3 = bar_chart(ASSET_NAMES, current_pcts, target_pcts)
-        st.plotly_chart(fig3, use_container_width=True)
-
-        # Gap analysis table
-        section_label("Gap Analysis")
-
-        rows       = []
-        urgent     = []
-        overweight = []
-        underweight = []
-
-        for asset in ASSET_NAMES:
-            curr_pct   = holdings.get(asset, 0) / total * 100
-            tgt_pct    = targets.get(asset, 0)
-            gap        = curr_pct - tgt_pct
-            curr_val   = holdings.get(asset, 0)
-            tgt_val    = total * tgt_pct / 100
-            diff_val   = curr_val - tgt_val
-
-            if gap > 5:
-                status     = f"Overweight +{gap:.1f}%"
-                status_col = f"color:{DANGER};font-weight:500;"
-                overweight.append((asset, gap, abs(diff_val)))
-            elif gap < -5:
-                status     = f"Underweight {gap:.1f}%"
-                status_col = f"color:{WARNING};font-weight:500;"
-                underweight.append((asset, gap, abs(diff_val)))
-            else:
-                status     = f"On target ({gap:+.1f}%)"
-                status_col = f"color:{SUCCESS};font-weight:500;"
-
-            rows.append([
-                f"<span style='font-family:{FONT_B};font-size:0.85rem;'>{asset}</span>",
-                f"<span style='font-family:{FONT_M};'>{curr_pct:.1f}%</span>",
-                f"<span style='font-family:{FONT_M};'>{tgt_pct:.0f}%</span>",
-                f"<span style='font-family:{FONT_M};{status_col}'>{status}</span>",
-                f"<span style='font-family:{FONT_M};'>{fmt(curr_val)}</span>",
-                f"<span style='font-family:{FONT_M};'>{fmt(tgt_val)}</span>",
-                f"<span style='font-family:{FONT_M};'>{fmt(diff_val):}</span>",
+        
+        section_label("Allocation Drift Comparison")
+        
+        # Calculate current percentages and variances
+        current_pcts = {asset: (val / total * 100) for asset, val in holdings.items()}
+        drift_pcts = {asset: (current_pcts[asset] - targets[asset]) for asset in ASSET_NAMES}
+        drift_vals = {asset: (holdings[asset] - (targets[asset] / 100 * total)) for asset in ASSET_NAMES}
+        
+        # Growth vs Defensive calculations
+        growth_assets = ["Australian Shares", "International Shares", "Property & REITs"]
+        defensive_assets = ["Fixed Income & Bonds", "Cash & Term Deposits"]
+        
+        curr_growth_pct = sum(current_pcts[a] for a in growth_assets)
+        curr_def_pct = sum(current_pcts[a] for a in defensive_assets)
+        tgt_growth_pct = sum(targets[a] for a in growth_assets)
+        tgt_def_pct = sum(targets[a] for a in defensive_assets)
+        
+        # Visualizing Side-by-side Grouped Bar Chart
+        col_bar, col_metrics = st.columns([5, 4], gap="large")
+        
+        with col_bar:
+            fig3 = bar_chart(
+                names=ASSET_NAMES,
+                current=[current_pcts[a] for a in ASSET_NAMES],
+                target=[targets[a] for a in ASSET_NAMES]
+            )
+            st.plotly_chart(fig3, use_container_width=True)
+            
+        with col_metrics:
+            st.markdown("<br>", unsafe_allow_html=True)
+            # Display KPIs for Growth / Defensive
+            kpi_row([
+                ("Growth / Defensive Split", f"{curr_growth_pct:.0f}% / {curr_def_pct:.0f}%", f"Target: {tgt_growth_pct:.0f}% / {tgt_def_pct:.0f}%", True),
             ])
-
-        html_row_table(
-            headers=["Asset Class", "Current %", "Target %", "Status", "Current Value", "Target Value", "Difference"],
-            rows=rows,
-        )
-
-        # Advisor commentary on specific gaps
-        if overweight:
-            biggest_over = max(overweight, key=lambda x: x[1])
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Find the largest absolute drift
+            max_drift_asset = max(ASSET_NAMES, key=lambda a: abs(drift_pcts[a]))
+            max_drift_pct = drift_pcts[max_drift_asset]
+            max_drift_val = drift_vals[max_drift_asset]
+            
+            drift_direction = "Overweight" if max_drift_pct > 0 else "Underweight"
+            kpi_row([
+                ("Maximum Portfolio Drift", f"{abs(max_drift_pct):.1f}%", f"{max_drift_asset} ({drift_direction})", False)
+            ])
+            
+        st.markdown("<br>", unsafe_allow_html=True)
+        section_label("Asset Class Drift Table")
+        
+        # HTML Table for allocation drift
+        headers = ["Asset Class", "Current Value", "Current %", "Target %", "Drift %", "Drift Value"]
+        table_rows = []
+        for asset in ASSET_NAMES:
+            c_val = holdings[asset]
+            c_pct = current_pcts[asset]
+            t_pct = targets[asset]
+            d_pct = drift_pcts[asset]
+            d_val = drift_vals[asset]
+            
+            # Text styling for drift
+            if abs(d_pct) < 1.0:
+                d_pct_str = f"<span style='color:{MUTED};font-family:{FONT_M};'>Aligned</span>"
+                d_val_str = f"<span style='color:{MUTED};font-family:{FONT_M};'>—</span>"
+            elif d_pct > 0:
+                d_pct_str = f"<span style='color:{DANGER};font-weight:500;font-family:{FONT_M};'>+{d_pct:.1f}%</span>"
+                d_val_str = f"<span style='color:{DANGER};font-weight:500;font-family:{FONT_M};'>+{fmt(d_val)}</span>"
+            else:
+                d_pct_str = f"<span style='color:{GOLD};font-weight:500;font-family:{FONT_M};'>{d_pct:.1f}%</span>"
+                d_val_str = f"<span style='color:{GOLD};font-weight:500;font-family:{FONT_M};'>{fmt(d_val)}</span>"
+                
+            table_rows.append([
+                asset,
+                fmt(c_val),
+                f"{c_pct:.1f}%",
+                f"{t_pct:.1f}%",
+                d_pct_str,
+                d_val_str
+            ])
+            
+        html_row_table(headers, table_rows)
+        
+        # Dynamic Advisor commentary based on portfolio health
+        max_abs_drift = max(abs(drift_pcts[a]) for a in ASSET_NAMES)
+        if max_abs_drift <= 3.0:
             advisor_quote(
-                f"Your most significant overweight is {biggest_over[0]} at {biggest_over[1]:.1f}% above target. "
-                f"This typically develops over time as strong-performing assets drift upward in a portfolio "
-                f"without active rebalancing — a very common outcome. "
-                f"The question is not whether this happened, but how you address it. "
-                f"The rebalancing plan provides specific guidance.",
-                kind="caution",
+                "Your portfolio is remarkably well-aligned with your target asset profile. "
+                "Minor deviations under 3% are standard and do not warrant portfolio disruption or transaction costs. "
+                "Maintain your disciplined approach and review this layout semi-annually.",
+                kind="success"
             )
-
-        if underweight:
-            biggest_under = min(underweight, key=lambda x: x[1])
+        elif max_abs_drift <= 8.0:
             advisor_quote(
-                f"Your most notable underweight is {biggest_under[0]}, sitting {abs(biggest_under[1]):.1f}% "
-                f"below your target for a {profile_name} profile. "
-                f"Underweights in defensive asset classes are common among investors who have been in a "
-                f"growth phase and not rebalanced. This can leave the portfolio more exposed to downturns "
-                f"than the risk profile suggests.",
-                kind="caution",
+                f"You have moderate drift in your portfolio, primarily driven by <strong>{max_drift_asset}</strong> which is "
+                f"{abs(max_drift_pct):.1f}% {drift_direction.lower()}. This level of drift is common during medium-term "
+                f"market movements. We recommend scheduling a rebalancing action soon, ideally using tax-efficient capital cash inflows.",
+                kind="caution"
             )
-
-        if not overweight and not underweight:
+        else:
             advisor_quote(
-                "Your portfolio is well-aligned with your risk profile across all asset classes. "
-                "This is the outcome of disciplined investing and regular rebalancing. "
-                "The primary task now is to maintain this alignment over time — "
-                "which requires reviewing quarterly as markets shift.",
-                kind="success",
+                f"Your portfolio has developed significant asset drift. <strong>{max_drift_asset}</strong> has drifted by "
+                f"<strong>{drift_pcts[max_drift_asset]:+.1f}%</strong> (equivalent to {fmt(drift_vals[max_drift_asset])}). "
+                f"This major misalignment shifts the actual risk profile of your portfolio away from your comfort zone. "
+                f"If equities are highly overweight, you are exposed to significant drawdowns; if cash is overweight, inflation is "
+                f"eroding your purchasing power. Active rebalancing is highly recommended. Proceed to Tab 4 for a structured action plan.",
+                kind="warning"
             )
-
-        # Side-by-side donuts
-        section_label("Visual Comparison")
-        col_curr, col_tgt = st.columns(2, gap="large")
-
-        with col_curr:
-            st.markdown(
-                f"<p style='font-family:{FONT_M};font-size:0.6rem;letter-spacing:0.14em;"
-                f"text-transform:uppercase;color:{MUTED};text-align:center;"
-                f"margin-bottom:0.3rem;'>Current Allocation</p>",
-                unsafe_allow_html=True,
-            )
-            curr_active = {k: v for k, v in holdings.items() if v > 0}
-            fig_curr = donut_chart(
-                labels=list(curr_active.keys()),
-                values=list(curr_active.values()),
-                colors=[ASSET_COLORS[ASSET_NAMES.index(k)] for k in curr_active.keys()],
-                center_text="Current",
-            )
-            st.plotly_chart(fig_curr, use_container_width=True)
-
-        with col_tgt:
-            st.markdown(
-                f"<p style='font-family:{FONT_M};font-size:0.6rem;letter-spacing:0.14em;"
-                f"text-transform:uppercase;color:{MUTED};text-align:center;"
-                f"margin-bottom:0.3rem;'>Target Allocation</p>",
-                unsafe_allow_html=True,
-            )
-            tgt_active = {k: v for k, v in targets.items() if v > 0}
-            fig_tgt = donut_chart(
-                labels=list(tgt_active.keys()),
-                values=list(tgt_active.values()),
-                colors=[ASSET_COLORS[ASSET_NAMES.index(k)] for k in tgt_active.keys()],
-                center_text=profile_name[:4] + ".",
-            )
-            st.plotly_chart(fig_tgt, use_container_width=True)
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -1263,209 +1260,130 @@ with tab3:
 with tab4:
 
     if not st.session_state["profile_done"]:
-        banner("Complete the Risk Assessment first.", "info")
+        banner("Complete the Risk Assessment in Tab 1 first to unlock your rebalancing plan.", "info")
     elif total_portfolio() == 0:
-        banner("Enter your current holdings in the My Portfolio tab.", "info")
+        banner("Enter your portfolio holdings in Tab 2 first to generate a rebalancing plan.", "info")
     else:
         profile_name = st.session_state["risk_profile"]
-        profile      = PROFILES[profile_name]
-        targets      = profile["targets"]
-        holdings     = portfolio_values()
-        total        = total_portfolio()
-
+        profile = PROFILES[profile_name]
+        targets = profile["targets"]
+        holdings = portfolio_values()
+        total = total_portfolio()
+        
         advisor_quote(
-            "Rebalancing is not a complex strategy. "
-            "It is the discipline of systematically selling what has done well and buying what has done poorly — "
-            "without emotion, without prediction, and without timing the market. "
-            "The plan below tells you exactly what needs to move, by how much, and in what order. "
-            "What it cannot tell you is the tax consequence of selling appreciated assets. "
-            "Always consider capital gains tax implications before executing any sale, "
-            "particularly for assets held outside of superannuation.",
-            kind="wisdom",
+            "Rebalancing is the systematic act of selling high and buying low. "
+            "It requires you to trim asset classes that have performed exceptionally well (taking profits) "
+            "and allocate to asset classes that have lagged behind. This disciplined process "
+            "is emotionally challenging but remains the single most reliable risk-mitigation technique in asset management.",
+            kind="wisdom"
         )
-
-        section_label("Rebalancing Actions")
-
-        sells  = []   # (asset, amount, current%, target%)
-        buys   = []   # (asset, amount, current%, target%)
-        holds  = []   # (asset, current%, target%)
-
+        
+        section_label("Rebalancing Action Ledger")
+        
+        # Calculate rebalancing values
+        rebal_rows = []
+        total_buy = 0.0
+        total_sell = 0.0
+        
         for asset in ASSET_NAMES:
-            curr_val  = holdings.get(asset, 0)
-            curr_pct  = curr_val / total * 100
-            tgt_pct   = targets.get(asset, 0)
-            tgt_val   = total * tgt_pct / 100
-            diff      = curr_val - tgt_val
-            gap_pct   = curr_pct - tgt_pct
-
-            if gap_pct > 2:
-                sells.append((asset, diff, curr_pct, tgt_pct))
-            elif gap_pct < -2:
-                buys.append((asset, abs(diff), curr_pct, tgt_pct))
+            c_val = holdings[asset]
+            t_pct = targets[asset]
+            t_val = (t_pct / 100) * total
+            adj_val = t_val - c_val
+            
+            # Action threshold: $100
+            if abs(adj_val) < 100.0:
+                action_str = f"<span style='color:{SUCCESS};font-weight:500;font-family:{FONT_M};'>✓ Aligned</span>"
+                adj_str = f"<span style='color:{MUTED};font-family:{FONT_M};'>—</span>"
+            elif adj_val > 0:
+                total_buy += adj_val
+                action_str = f"<span style='color:{NAVY};font-weight:500;font-family:{FONT_M};'>Buy / Allocate</span>"
+                adj_str = f"<span style='color:{NAVY};font-weight:500;font-family:{FONT_M};'>+{fmt(adj_val)}</span>"
             else:
-                holds.append((asset, curr_pct, tgt_pct))
-
-        sells.sort(key=lambda x: x[1], reverse=True)
-        buys.sort(key=lambda x: x[1], reverse=True)
-
-        # SELL actions
-        if sells:
-            st.markdown(
-                f"<p style='font-family:{FONT_H};font-size:1.1rem;color:{DANGER};"
-                f"font-weight:500;margin:0.5rem 0 0.8rem;'>Reduce — Overweight Positions</p>",
-                unsafe_allow_html=True,
-            )
-            for i, (asset, amount, curr_pct, tgt_pct) in enumerate(sells):
-                priority = "High priority" if i == 0 else "Secondary priority"
-                st.markdown(
-                    f"<div style='background:{CARD};border:1px solid {BORDER};"
-                    f"border-left:3px solid {DANGER};border-radius:0 8px 8px 0;"
-                    f"padding:1rem 1.3rem;margin-bottom:0.75rem;'>"
-                    f"<div style='display:flex;justify-content:space-between;"
-                    f"align-items:center;margin-bottom:0.3rem;'>"
-                    f"<span style='font-family:{FONT_H};font-size:0.95rem;color:{TEXT};"
-                    f"font-weight:500;'>Reduce {asset}</span>"
-                    f"<span style='font-family:{FONT_M};font-size:0.9rem;color:{DANGER};"
-                    f"font-weight:500;'>Sell {fmt(amount)}</span></div>"
-                    f"<p style='font-family:{FONT_B};font-size:0.82rem;color:{MUTED};"
-                    f"font-weight:300;margin:0 0 0.35rem;'>"
-                    f"Currently {curr_pct:.1f}% of portfolio → Target {tgt_pct:.0f}%</p>"
-                    f"<p style='font-family:{FONT_M};font-size:0.6rem;letter-spacing:0.1em;"
-                    f"text-transform:uppercase;color:{DANGER};margin:0;'>{priority}</p>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-
-        # BUY actions
-        if buys:
-            st.markdown(
-                f"<p style='font-family:{FONT_H};font-size:1.1rem;color:{SUCCESS};"
-                f"font-weight:500;margin:1.2rem 0 0.8rem;'>Increase — Underweight Positions</p>",
-                unsafe_allow_html=True,
-            )
-            for i, (asset, amount, curr_pct, tgt_pct) in enumerate(buys):
-                priority = "High priority" if i == 0 else "Secondary priority"
-                st.markdown(
-                    f"<div style='background:{CARD};border:1px solid {BORDER};"
-                    f"border-left:3px solid {SUCCESS};border-radius:0 8px 8px 0;"
-                    f"padding:1rem 1.3rem;margin-bottom:0.75rem;'>"
-                    f"<div style='display:flex;justify-content:space-between;"
-                    f"align-items:center;margin-bottom:0.3rem;'>"
-                    f"<span style='font-family:{FONT_H};font-size:0.95rem;color:{TEXT};"
-                    f"font-weight:500;'>Increase {asset}</span>"
-                    f"<span style='font-family:{FONT_M};font-size:0.9rem;color:{SUCCESS};"
-                    f"font-weight:500;'>Buy {fmt(amount)}</span></div>"
-                    f"<p style='font-family:{FONT_B};font-size:0.82rem;color:{MUTED};"
-                    f"font-weight:300;margin:0 0 0.35rem;'>"
-                    f"Currently {curr_pct:.1f}% of portfolio → Target {tgt_pct:.0f}%</p>"
-                    f"<p style='font-family:{FONT_M};font-size:0.6rem;letter-spacing:0.1em;"
-                    f"text-transform:uppercase;color:{SUCCESS};margin:0;'>{priority}</p>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
-
-        # HOLD positions
-        if holds:
-            section_label("Hold — On Target")
-            hold_text = " &nbsp;·&nbsp; ".join(
-                f"<span style='color:{SUCCESS};font-weight:500;'>✓</span> {a} ({c:.1f}%)"
-                for a, c, _ in holds
-            )
-            st.markdown(
-                f"<p style='font-family:{FONT_B};font-size:0.875rem;color:{MUTED};"
-                f"font-weight:300;'>{hold_text}</p>",
-                unsafe_allow_html=True,
-            )
-
-        # Summary table
-        section_label("Full Rebalancing Summary")
-
-        summary_rows = []
-        for asset in ASSET_NAMES:
-            curr_val = holdings.get(asset, 0)
-            curr_pct = curr_val / total * 100
-            tgt_pct  = targets.get(asset, 0)
-            tgt_val  = total * tgt_pct / 100
-            diff     = tgt_val - curr_val  # positive = buy, negative = sell
-
-            if diff > 500:
-                action = f"<span style='color:{SUCCESS};font-weight:500;'>Buy {fmt(diff)}</span>"
-            elif diff < -500:
-                action = f"<span style='color:{DANGER};font-weight:500;'>Sell {fmt(abs(diff))}</span>"
-            else:
-                action = f"<span style='color:{MUTED};'>Hold</span>"
-
-            summary_rows.append([
+                total_sell += abs(adj_val)
+                action_str = f"<span style='color:{GOLD};font-weight:500;font-family:{FONT_M};'>Sell / Reallocate</span>"
+                adj_str = f"<span style='color:{GOLD};font-weight:500;font-family:{FONT_M};'>-{fmt(abs(adj_val))}</span>"
+                
+            rebal_rows.append([
                 asset,
-                f"{curr_pct:.1f}%",
-                f"{fmt(curr_val)}",
-                f"{tgt_pct:.0f}%",
-                f"{fmt(tgt_val)}",
-                action,
+                fmt(c_val),
+                fmt(t_val),
+                adj_str,
+                action_str
             ])
-
-        html_row_table(
-            headers=["Asset Class", "Current %", "Current Value",
-                     "Target %", "Target Value", "Action"],
-            rows=summary_rows,
-        )
-
-        # Important considerations
-        section_label("Important Considerations Before Acting")
-
-        considerations = [
-            ("Capital Gains Tax",
-             "Selling appreciated assets outside of superannuation may trigger a capital gains tax event. "
-             "If assets have been held for more than 12 months, the 50% CGT discount applies in Australia. "
-             "Consider the after-tax cost of rebalancing versus remaining slightly misaligned.",
-             "caution"),
-            ("Superannuation First",
-             "If you hold investments both inside and outside of super, rebalancing within super "
-             "is typically more tax-efficient — there is no CGT on asset sales inside a super fund "
-             "in accumulation phase (15% tax on earnings, not capital gains at the marginal rate). "
-             "Start with super adjustments where possible.",
-             "wisdom"),
-            ("Use New Contributions",
-             "Where possible, direct new contributions and income distributions into underweight asset classes "
-             "rather than selling overweight positions. This achieves gradual rebalancing without triggering "
-             "tax events and is the most frictionless long-term approach.",
-             "success"),
-            ("Rebalance Annually",
-             "Set a calendar reminder to review this analysis once per year, or when any asset class "
-             "drifts more than 10 percentage points from its target. Over-frequent rebalancing generates "
-             "transaction costs and tax events without proportional benefit.",
-             "wisdom"),
-        ]
-
-        for title, text, kind in considerations:
-            with st.expander(title):
-                advisor_quote(text, kind=kind)
-
-        # Final advisor note
+            
+        # Display KPI Summary Card for Rebalancing Volume
+        kpi_row([
+            ("Total Portfolio Value", fmt(total), "Net wealth under advisory", True),
+            ("Buy / Inflow Volume Required", fmt(total_buy), "To fully align underweight sectors", False),
+            ("Sell / Outflow Volume Required", fmt(total_sell), "To trim overweight sectors", False),
+        ])
+        
         st.markdown("<br>", unsafe_allow_html=True)
-        advisor_quote(
-            "This plan gives you a clear, evidence-based framework for aligning your portfolio "
-            "with your genuine risk tolerance. The numbers are straightforward. "
-            "The harder part — and the part where a licensed adviser adds the most value — "
-            "is executing the rebalancing in the most tax-efficient sequence for your specific "
-            "circumstances, income, and overall financial plan. "
-            "Use this as a starting point for that conversation.",
-            kind="wisdom",
+        
+        # Render the custom HTML table
+        headers = ["Asset Class", "Current Value", "Target Value", "Adjustment Required", "Action Directive"]
+        html_row_table(headers, rebal_rows)
+        
+        # Strategic Advice block
+        st.markdown("<br>", unsafe_allow_html=True)
+        section_label("Rebalancing Methodologies & Best Practices")
+        
+        col_m1, col_m2 = st.columns(2, gap="large")
+        
+        with col_m1:
+            st.markdown(
+                f"<div style='background:{CARD};border:1px solid {BORDER};"
+                f"border-radius:8px;padding:20px;min-height:220px;'>"
+                f"<h4 style='font-family:{FONT_H};font-size:1.15rem;color:{NAVY};"
+                f"margin-top:0;margin-bottom:0.5rem;'>Method A: Cash Flow Rebalancing</h4>"
+                f"<p style='font-family:{FONT_B};font-size:0.875rem;color:{TEXT};"
+                f"line-height:1.65;font-weight:300;margin:0 0 1rem;'>"
+                f"Instead of selling assets (which triggers trading fees and tax liabilities), you "
+                f"direct new savings, dividend payouts, or pension contributions exclusively to "
+                f"the underweight classes (indicated by <strong>Buy / Allocate</strong> above).</p>"
+                f"<p style='font-family:{FONT_M};font-size:0.6rem;color:{SUCCESS};"
+                f"letter-spacing:0.05em;text-transform:uppercase;font-weight:500;margin:0;'>"
+                f"✓ Tax-efficient &nbsp;·&nbsp; ✓ Minimises transaction costs</p>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+            
+        with col_m2:
+            st.markdown(
+                f"<div style='background:{CARD};border:1px solid {BORDER};"
+                f"border-radius:8px;padding:20px;min-height:220px;'>"
+                f"<h4 style='font-family:{FONT_H};font-size:1.15rem;color:{GOLD};"
+                f"margin-top:0;margin-bottom:0.5rem;'>Method B: Full Rebalancing</h4>"
+                f"<p style='font-family:{FONT_B};font-size:0.875rem;color:{TEXT};"
+                f"line-height:1.65;font-weight:300;margin:0 0 1rem;'>"
+                f"Simultaneously executing sell orders on overweight asset classes and buying "
+                f"underweight classes. While this instantly achieves your target allocation, it is a "
+                f"taxable event in many jurisdictions (such as triggering Capital Gains Tax in Australia) "
+                f"and incurs double transaction fees.</p>"
+                f"<p style='font-family:{FONT_M};font-size:0.6rem;color:{WARNING};"
+                f"letter-spacing:0.05em;text-transform:uppercase;font-weight:500;margin:0;'>"
+                f"⚠ High precision &nbsp;·&nbsp; ⚠ Potential CGT liability</p>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+            
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Professional Checklist for Rebalancing
+        st.markdown(
+            f"<div style='background:#FDFCF9;border:1px solid {BORDER};"
+            f"border-radius:8px;padding:24px 28px;'>"
+            f"<p style='font-family:{FONT_M};font-size:0.58rem;letter-spacing:0.18em;"
+            f"text-transform:uppercase;color:{MUTED};margin-top:0;margin-bottom:12px;'>"
+            f"Adviser Execution Checklist</p>"
+            f"<ol style='font-family:{FONT_B};font-size:0.875rem;color:{TEXT};"
+            f"line-height:1.8;font-weight:300;margin:0;padding-left:1.2rem;'>"
+            f"<li><strong>Assess tax exposure:</strong> If using Method B, calculate if you hold any assets at a capital loss or if you qualify for long-term CGT discounts (e.g. holding assets &gt; 12 months in Australia).</li>"
+            f"<li><strong>Leverage natural cash flows first:</strong> Turn off automatic dividend reinvestment plans (DRPs) in overweight holdings and direct cash dividends to your cash accounts to buy underweight holdings manually.</li>"
+            f"<li><strong>Consolidate accounts:</strong> Ensure you evaluate assets across both your individual accounts and superannuation / retirement schemes before making execution choices.</li>"
+            f"<li><strong>Establish drift thresholds:</strong> Professional advisory standards advise only triggering a full rebalance when an asset class drifts by more than 5.0% absolute.</li>"
+            f"</ol>"
+            f"</div>",
+            unsafe_allow_html=True
         )
-
-
-# ═══════════════════════════════════════════════════════════════════════
-# 9. FOOTER
-# ═══════════════════════════════════════════════════════════════════════
-
-st.markdown("---")
-st.markdown(
-    f"<div style='font-family:{FONT_M};font-size:0.58rem;color:{MUTED};"
-    f"letter-spacing:0.1em;text-transform:uppercase;text-align:center;"
-    f"padding-bottom:1.5rem;line-height:1.8;'>"
-    f"Meridian · Investment Risk &amp; Allocation Guide<br>"
-    f"For educational and informational purposes only · Not personal financial advice<br>"
-    f"Always consult a licensed financial adviser (AFSL holder) before making investment decisions"
-    f"</div>",
-    unsafe_allow_html=True,
-)
