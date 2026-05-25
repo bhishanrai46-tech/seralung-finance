@@ -672,36 +672,33 @@ with tab1:
     total_score = 0
     for i, (q, opts, insight) in enumerate(QUESTIONS):
         qk = f"q{i + 1}"
-        st.markdown(
-            f"<div style='background:{CARD};border:1px solid {BD};"
-            f"border-radius:8px;padding:12px 14px;margin-bottom:6px;"
-            f"box-shadow:0 1px 4px rgba(0,0,0,0.04);'>"
-            f"<div style='display:flex;gap:8px;align-items:flex-start;margin-bottom:8px;'>"
-            f"<span style='background:{BLUE_BG};color:{BLUE};font-family:{FM};"
-            f"font-size:0.6rem;font-weight:600;padding:2px 7px;border-radius:3px;"
-            f"flex-shrink:0;margin-top:1px;'>{i + 1:02d}/{len(QUESTIONS)}</span>"
-            f"<span style='font-family:{FH};font-size:0.92rem;font-weight:600;"
-            f"color:{TEXT};line-height:1.4;'>{q}</span></div>",
-            unsafe_allow_html=True,
-        )
-        idx = st.radio(
-            q, list(range(len(opts))),
-            format_func=lambda x, o=opts: o[x],
-            index=st.session_state[qk],
-            key=f"r_{qk}",
-            label_visibility="collapsed",
-        )
-        st.session_state[qk] = idx
-        total_score += idx + 1
-        with st.expander("Why this matters"):
+        with st.container(border=True):
             st.markdown(
-                f"<div style='font-family:{FH};font-size:0.83rem;color:{MUTED};"
-                f"line-height:1.6;padding:2px 0;'>{insight}</div>",
+                f"<div style='display:flex;gap:9px;align-items:flex-start;'>"
+                f"<span style='background:{BLUE_BG};color:{BLUE};font-family:{FM};"
+                f"font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:4px;"
+                f"flex-shrink:0;margin-top:2px;'>{i + 1:02d}/{len(QUESTIONS)}</span>"
+                f"<span style='font-family:{FH};font-size:0.95rem;font-weight:600;"
+                f"color:{TEXT};line-height:1.4;'>{q}</span></div>",
                 unsafe_allow_html=True,
             )
-        st.markdown("</div>", unsafe_allow_html=True)
+            idx = st.radio(
+                q, list(range(len(opts))),
+                format_func=lambda x, o=opts: o[x],
+                index=st.session_state[qk],
+                key=f"r_{qk}",
+                label_visibility="collapsed",
+            )
+            st.session_state[qk] = idx
+            total_score += idx + 1
+            st.markdown(
+                f"<div style='font-family:{FH};font-size:0.78rem;color:{MUTED};"
+                f"line-height:1.5;border-top:1px solid {BD};padding-top:7px;'>"
+                f"<strong style='color:{BLUE};'>Why this matters &mdash;</strong> {insight}</div>",
+                unsafe_allow_html=True,
+            )
 
-    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
     col_b, _ = st.columns([2, 5])
     with col_b:
         if st.button("Calculate my profile"):
@@ -1152,14 +1149,28 @@ with tab4:
             note(f"Total estimated CGT on these sells: {fmt(total_cgt)} (50% discount applied for assets held 12+ months). Confirm with your accountant.", "warn")
 
         sec("EXECUTION NOTES", MUTED)
+        exec_cfg = {
+            "good":  (GREEN_BG, GREEN),
+            "warn":  (AMBER_BG, AMBER),
+            "info":  (BLUE_BG,  BLUE),
+        }
         for title, txt, kind in [
             ("Super first", "No CGT on sales inside an accumulation-phase super fund. Always rebalance within super before acting on non-super assets.", "good"),
             ("Use contributions", "Directing new money into underweights avoids selling and CGT entirely. Most efficient method over a 12–24 month horizon.", "good"),
             ("CGT timing", "Assets held under 12 months: full gain is taxed. Over 12 months: 50% discount applies. Consider timing sells around the 12-month mark.", "warn"),
             ("Review frequency", "Annual review is sufficient for most investors. More frequent rebalancing generates friction without proportional benefit.", "info"),
         ]:
-            with st.expander(title):
-                note(txt, kind)
+            ebg, eac = exec_cfg.get(kind, exec_cfg["info"])
+            st.markdown(
+                f"<div style='background:{CARD};border:1px solid {BD};"
+                f"border-left:3px solid {eac};border-radius:0 6px 6px 0;"
+                f"padding:8px 12px;margin-bottom:5px;'>"
+                f"<div style='font-family:{FH};font-size:0.83rem;font-weight:600;"
+                f"color:{eac};margin-bottom:2px;'>{title}</div>"
+                f"<div style='font-family:{FH};font-size:0.8rem;color:{MUTED};"
+                f"line-height:1.5;'>{txt}</div></div>",
+                unsafe_allow_html=True,
+            )
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1179,7 +1190,7 @@ with tab5:
         note("Stress testing converts abstract percentage declines into actual dollar impacts on your specific portfolio. These are calibrated historical scenarios, not predictions.", "info")
 
         sec("SCENARIO", RED)
-        scen_name = st.radio("", list(STRESS.keys()), horizontal=True,
+        scen_name = st.radio("Scenario", list(STRESS.keys()), horizontal=True,
                              label_visibility="collapsed")
         sc = STRESS[scen_name]
         nt, net_loss, bd = run_stress(holdings, total, sc)
