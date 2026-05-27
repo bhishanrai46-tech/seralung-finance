@@ -11,16 +11,16 @@ st.set_page_config(page_title="Meridian", layout="wide",
                    initial_sidebar_state="collapsed")
 
 # ── PALETTE (light green) ─────────────────────────────────────
-BG         = "#E6F4EA"
+BG         = "#EAF5EC"
 CARD       = "#FFFFFF"
-BD         = "#CFE3D5"
-TEXT       = "#15231B"
-MUTED      = "#5E7167"
-DIM        = "#9CB0A3"
+BD         = "#CBE2D2"
+TEXT       = "#10241A"
+MUTED      = "#54695E"
+DIM        = "#95AC9E"
 
-PRIMARY    = "#1E8E54"
-PRIMARY_BG = "#E4F4EA"
-PRIMARY_DK = "#15703F"
+PRIMARY    = "#16794D"
+PRIMARY_BG = "#E0F2E7"
+PRIMARY_DK = "#0E5C39"
 
 GREEN      = "#1E8E54"
 GREEN_BG   = "#E4F4EA"
@@ -321,7 +321,7 @@ html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
 [data-testid="stMarkdownContainer"], [data-testid="stWidgetLabel"] {{
     color: {TEXT};
 }}
-.block-container {{ padding: 1rem 1.6rem 3rem; max-width: 1100px; }}
+.block-container {{ padding: 0 1.6rem 3rem; max-width: 1120px; }}
 #MainMenu, footer, header {{ visibility: hidden; }}
 .stDeployButton {{ display: none !important; }}
 * {{ box-sizing: border-box; }}
@@ -330,21 +330,27 @@ h1, h2, h3, h4 {{ font-family: {FH} !important; font-weight: 700 !important; col
 
 /* Tighten vertical gaps */
 [data-testid="stVerticalBlock"] {{ gap: 0.5rem !important; }}
-[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 10px !important; }}
+[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 12px !important; }}
 
-/* Tabs */
-.stTabs [data-baseweb="tab-list"] {{ gap: 0; border-bottom: 1px solid {BD}; background: transparent; padding: 0; }}
+/* Tabs — bigger, cleaner, website-style nav */
+.stTabs [data-baseweb="tab-list"] {{
+    gap: 4px; border-bottom: 1px solid {BD}; background: transparent; padding: 0;
+}}
 .stTabs [data-baseweb="tab"] {{
-    font-family: {FM}; font-size: 0.65rem; letter-spacing: 0.07em; text-transform: uppercase;
-    color: {MUTED}; background: transparent; border: none;
-    border-bottom: 2px solid transparent; padding: 9px 16px; margin: 0;
+    font-family: {FH}; font-size: 0.95rem; letter-spacing: 0; text-transform: none;
+    color: {MUTED}; background: transparent; border: none; font-weight: 600;
+    border-bottom: 3px solid transparent; padding: 12px 20px; margin: 0;
+    border-radius: 8px 8px 0 0; transition: all 0.15s ease;
+}}
+.stTabs [data-baseweb="tab"]:hover {{
+    color: {PRIMARY} !important; background: {PRIMARY_BG} !important;
 }}
 .stTabs [aria-selected="true"] {{
-    color: {PRIMARY} !important; border-bottom: 2px solid {PRIMARY} !important;
-    background: transparent !important; font-weight: 600 !important;
+    color: {PRIMARY} !important; border-bottom: 3px solid {PRIMARY} !important;
+    background: {PRIMARY_BG} !important; font-weight: 700 !important;
 }}
 .stTabs [data-baseweb="tab-highlight"] {{ display: none !important; }}
-.stTabs [data-baseweb="tab-panel"] {{ padding-top: 1rem; background: transparent; }}
+.stTabs [data-baseweb="tab-panel"] {{ padding-top: 1.2rem; background: transparent; }}
 
 /* Inputs */
 div[data-testid="stNumberInput"] label, div[data-testid="stSelectbox"] label {{
@@ -553,47 +559,66 @@ def action_card(title, amount_str, cur_pct, tgt_pct, kind, priority, extra=""):
     )
 
 
-# ── HEADER ────────────────────────────────────────────────────
+# ── HEADER (website-style hero) ───────────────────────────────
 p_done = st.session_state["profile_done"]
 h_done = tpv() > 0
 
-hl, hr = st.columns([7, 1], gap="small")
-with hl:
-    st.markdown(
-        f"<div style='padding:12px 0 6px;border-bottom:2px solid {PRIMARY};margin-bottom:10px;'>"
-        f"<div style='display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;'>"
-        f"<span style='font-family:{FM};font-size:1.05rem;font-weight:600;color:{PRIMARY};"
-        f"letter-spacing:-0.01em;'>Meridian</span>"
-        f"<span style='font-family:{FM};font-size:0.62rem;color:{MUTED};letter-spacing:0.06em;'>"
-        f"Investment Risk &amp; Allocation &nbsp;·&nbsp; v6 green</span></div>"
-        f"<div style='display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;'>"
-        + "".join(
-            f"<span style='font-family:{FM};font-size:0.58rem;letter-spacing:0.06em;"
-            f"text-transform:uppercase;padding:2px 8px;border-radius:3px;"
-            f"background:{(PRIMARY if done else BD)};color:{('#fff' if done else MUTED)};'>"
-            f"{'+ ' if done else ''}{lbl}</span>"
-            for lbl, done in [
-                ("Profile", p_done), ("Portfolio", h_done),
-                ("Analysis", p_done and h_done), ("Rebalancing", p_done and h_done),
-                ("Stress Test", p_done and h_done), ("Goals", p_done and h_done),
-            ]
-        )
-        + "</div></div>",
-        unsafe_allow_html=True,
-    )
-with hr:
-    cur_list = list(CUR_SYM.keys())
-    st.markdown("<div style='padding-top:12px;'>", unsafe_allow_html=True)
-    st.selectbox("currency", cur_list, index=cur_list.index(st.session_state["currency"]),
-                 key="currency", label_visibility="collapsed")
-    st.markdown("</div>", unsafe_allow_html=True)
+steps_html = "".join(
+    f"<span style='font-family:{FH};font-size:0.72rem;font-weight:600;"
+    f"padding:4px 11px;border-radius:20px;white-space:nowrap;"
+    f"background:{('rgba(255,255,255,0.22)' if done else 'rgba(255,255,255,0.08)')};"
+    f"color:#fff;border:1px solid rgba(255,255,255,{('0.45' if done else '0.18')});'>"
+    f"{('&#10003; ' if done else '')}{lbl}</span>"
+    for lbl, done in [
+        ("Profile", p_done), ("Portfolio", h_done),
+        ("Analysis", p_done and h_done), ("Rebalancing", p_done and h_done),
+        ("Stress Test", p_done and h_done), ("Goals", p_done and h_done),
+    ]
+)
 
 st.markdown(
-    f"<div style='font-family:{FM};font-size:0.58rem;color:{DIM};padding:3px 0 8px;"
-    f"border-bottom:1px solid {BD};margin-bottom:4px;'>"
-    f"Educational purposes only — not personal financial advice — consult a licensed adviser (AFSL)</div>",
+    f"<div style='background:linear-gradient(120deg,{PRIMARY_DK} 0%,{PRIMARY} 55%,{LGREEN} 100%);"
+    f"border-radius:0 0 20px 20px;padding:1.6rem 2rem 1.5rem;margin:0 -1.6rem 1.1rem;"
+    f"box-shadow:0 6px 22px rgba(14,92,57,0.22);'>"
+    f"<div style='display:flex;align-items:center;justify-content:space-between;"
+    f"gap:16px;flex-wrap:wrap;'>"
+    # brand block
+    f"<div style='display:flex;align-items:center;gap:13px;'>"
+    f"<div style='width:46px;height:46px;border-radius:13px;background:rgba(255,255,255,0.16);"
+    f"border:1px solid rgba(255,255,255,0.35);display:flex;align-items:center;justify-content:center;"
+    f"font-family:{FH};font-size:1.6rem;font-weight:800;color:#fff;flex-shrink:0;'>M</div>"
+    f"<div>"
+    f"<div style='font-family:{FH};font-size:1.85rem;font-weight:800;color:#fff;"
+    f"letter-spacing:-0.02em;line-height:1;'>Meridian</div>"
+    f"<div style='font-family:{FH};font-size:0.82rem;color:rgba(255,255,255,0.82);"
+    f"margin-top:3px;font-weight:500;'>Investment Risk &amp; Portfolio Allocation</div>"
+    f"</div></div>"
+    # right meta
+    f"<div style='font-family:{FH};font-size:0.7rem;color:rgba(255,255,255,0.7);"
+    f"text-align:right;font-weight:600;letter-spacing:0.04em;'>SMART INVESTING&nbsp;·&nbsp;AU</div>"
+    f"</div>"
+    # progress pills
+    f"<div style='display:flex;flex-wrap:wrap;gap:7px;margin-top:14px;'>{steps_html}</div>"
+    f"</div>",
     unsafe_allow_html=True,
 )
+
+# currency + disclaimer row
+cl, cr = st.columns([5, 1], gap="small")
+with cl:
+    st.markdown(
+        f"<div style='font-family:{FH};font-size:0.74rem;color:{MUTED};padding-top:6px;'>"
+        f"<span style='background:{PRIMARY_BG};color:{PRIMARY_DK};font-weight:600;"
+        f"padding:3px 9px;border-radius:5px;'>For education only</span>"
+        f"&nbsp; Not personal financial advice — consult a licensed adviser (AFSL).</div>",
+        unsafe_allow_html=True,
+    )
+with cr:
+    cur_list = list(CUR_SYM.keys())
+    st.selectbox("currency", cur_list, index=cur_list.index(st.session_state["currency"]),
+                 key="currency", label_visibility="collapsed")
+
+st.markdown(f"<div style='height:1px;background:{BD};margin:8px 0 2px;'></div>", unsafe_allow_html=True)
 
 # ── TABS ──────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
