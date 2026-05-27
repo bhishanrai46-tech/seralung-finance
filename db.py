@@ -11,9 +11,9 @@ st.set_page_config(page_title="Meridian", layout="wide",
                    initial_sidebar_state="collapsed")
 
 # ── PALETTE (light green) ─────────────────────────────────────
-BG         = "#EFF5F0"
+BG         = "#E6F4EA"
 CARD       = "#FFFFFF"
-BD         = "#D7E3DA"
+BD         = "#CFE3D5"
 TEXT       = "#15231B"
 MUTED      = "#5E7167"
 DIM        = "#9CB0A3"
@@ -310,9 +310,15 @@ st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-html, body, .stApp, [data-testid="stAppViewContainer"] {{
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {{
     background: {BG} !important;
     font-family: {FH};
+    color: {TEXT} !important;
+}}
+/* Default text dark everywhere (beats a dark theme config). Inline-styled spans
+   and the white button text keep their own colours because those use inline styles. */
+.stApp, .stApp p, .stApp label, .stApp li,
+[data-testid="stMarkdownContainer"], [data-testid="stWidgetLabel"] {{
     color: {TEXT};
 }}
 .block-container {{ padding: 1rem 1.6rem 3rem; max-width: 1100px; }}
