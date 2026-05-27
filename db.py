@@ -360,7 +360,13 @@ div[data-testid="stNumberInput"] label, div[data-testid="stSelectbox"] label {{
 }}
 [role="listbox"] *, [role="option"] {{ background: {CARD} !important; color: {TEXT} !important; font-family: {FH} !important; }}
 
-/* RADIO — option text lives in a nested markdown <p>; colour it explicitly */
+/* RADIO — force every text node inside the radio to be dark, no matter how Streamlit nests it.
+   The radio circle uses border/background (not color), so this wildcard is safe. */
+div[data-testid="stRadio"] *,
+[data-testid="stRadio"] label *,
+[data-testid="stRadio"] [role="radiogroup"] * {{
+    color: {TEXT} !important;
+}}
 div[data-testid="stRadio"] label p,
 div[data-testid="stRadio"] [data-testid="stMarkdownContainer"] p {{
     color: {TEXT} !important;
@@ -380,6 +386,7 @@ div[data-testid="stRadio"] [role="radiogroup"] > label {{
 div[data-testid="stRadio"] [role="radiogroup"] > label:hover {{
     background: {PRIMARY_BG};
 }}
+/* the group's own (collapsed) label */
 div[data-testid="stRadio"] > label {{
     font-family: {FM} !important; font-size: 0.58rem !important;
     letter-spacing: 0.1em !important; text-transform: uppercase !important; color: {MUTED} !important;
@@ -552,7 +559,7 @@ with hl:
         f"<span style='font-family:{FM};font-size:1.05rem;font-weight:600;color:{PRIMARY};"
         f"letter-spacing:-0.01em;'>Meridian</span>"
         f"<span style='font-family:{FM};font-size:0.62rem;color:{MUTED};letter-spacing:0.06em;'>"
-        f"Investment Risk &amp; Allocation</span></div>"
+        f"Investment Risk &amp; Allocation &nbsp;·&nbsp; v6 green</span></div>"
         f"<div style='display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;'>"
         + "".join(
             f"<span style='font-family:{FM};font-size:0.58rem;letter-spacing:0.06em;"
