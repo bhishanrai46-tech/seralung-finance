@@ -1,5 +1,5 @@
 """
-Meridian — Investment Risk & Allocation  v5
+Meridian — Investment Risk & Allocation  v6  (Light Green Theme)
 Run:  streamlit run meridian_app.py
 Deps: streamlit plotly
 """
@@ -10,28 +10,32 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Meridian", layout="wide",
                    initial_sidebar_state="collapsed")
 
-# ── TOKENS ────────────────────────────────────────────────────
-BG      = "#F7F8FC"
-CARD    = "#FFFFFF"
-BD      = "#E2E5EF"
-TEXT    = "#1A1D2E"
-MUTED   = "#6B7280"
-DIM     = "#9CA3AF"
+# ── PALETTE (light green) ─────────────────────────────────────
+BG         = "#E6F4EA"
+CARD       = "#FFFFFF"
+BD         = "#CFE3D5"
+TEXT       = "#15231B"
+MUTED      = "#5E7167"
+DIM        = "#9CB0A3"
 
-BLUE    = "#3B6FEB"
-BLUE_BG = "#EEF3FD"
-BLUE_DK = "#2251C5"
+PRIMARY    = "#1E8E54"
+PRIMARY_BG = "#E4F4EA"
+PRIMARY_DK = "#15703F"
 
-GREEN   = "#0F9B6E"
-GREEN_BG= "#E8F8F3"
-AMBER   = "#C07A1A"
-AMBER_BG= "#FDF4E3"
-RED     = "#D93025"
-RED_BG  = "#FDECEA"
-PURPLE  = "#6D3EB8"
-PURPLE_BG="#F3EEFB"
-TEAL    = "#0E7490"
-TEAL_BG = "#E0F4F8"
+GREEN      = "#1E8E54"
+GREEN_BG   = "#E4F4EA"
+LGREEN     = "#3DA968"
+LGREEN_BG  = "#EAF6EE"
+AMBER      = "#B7791F"
+AMBER_BG   = "#FBF3E2"
+RED        = "#C53929"
+RED_BG     = "#FBEAE7"
+PURPLE     = "#6D4AB8"
+PURPLE_BG  = "#F0EBFA"
+TEAL       = "#0E7C7B"
+TEAL_BG    = "#E0F2F1"
+BLUE       = "#2E6FB0"
+BLUE_BG    = "#E9F0F8"
 
 FH = "'Plus Jakarta Sans', system-ui, sans-serif"
 FM = "'JetBrains Mono', 'Fira Code', monospace"
@@ -39,21 +43,21 @@ FM = "'JetBrains Mono', 'Fira Code', monospace"
 ASSET_NAMES = ["Australian Shares", "International Shares", "Property & REITs",
                "Fixed Income & Bonds", "Cash & Term Deposits"]
 ASSET_KEYS  = ["aus_shares", "intl_shares", "property_reits", "fixed_income", "cash_td"]
-ASSET_CLR   = [BLUE, GREEN, AMBER, PURPLE, TEAL]
+ASSET_CLR   = [PRIMARY, TEAL, AMBER, PURPLE, BLUE]
 
 PROFILE_CLR = {
-    "Conservative":           GREEN,
-    "Moderately Conservative": TEAL,
-    "Balanced":               BLUE,
-    "Growth":                 PURPLE,
-    "Aggressive":             RED,
+    "Conservative":            TEAL,
+    "Moderately Conservative": LGREEN,
+    "Balanced":                PRIMARY,
+    "Growth":                  PURPLE,
+    "Aggressive":              RED,
 }
 PROFILE_BG = {
-    "Conservative":           GREEN_BG,
-    "Moderately Conservative": TEAL_BG,
-    "Balanced":               BLUE_BG,
-    "Growth":                 PURPLE_BG,
-    "Aggressive":             RED_BG,
+    "Conservative":            TEAL_BG,
+    "Moderately Conservative": LGREEN_BG,
+    "Balanced":                PRIMARY_BG,
+    "Growth":                  PURPLE_BG,
+    "Aggressive":              RED_BG,
 }
 
 CUR_SYM = {"AUD": "A$", "USD": "$", "EUR": "€", "GBP": "£", "SGD": "S$"}
@@ -143,40 +147,35 @@ PROFILES = {
         "headline": "Capital preservation. Safety over returns.",
         "desc": "Predominantly bonds and cash with a small equity allocation. Minimal drawdown risk, lower return ceiling. Right for short horizons or low risk tolerance.",
         "targets": {"Australian Shares": 8, "International Shares": 12,
-                    "Property & REITs": 5, "Fixed Income & Bonds": 45, "Cash & Term Deposits": 30},
-    },
+                    "Property & REITs": 5, "Fixed Income & Bonds": 45, "Cash & Term Deposits": 30}},
     "Moderately Conservative": {
         "range": (19, 25), "ret": "4–6% p.a.", "ret_mid": 0.05,
         "draw": "10–15%", "draw_mid": 0.125, "horizon": "3–7 years", "vol": 0.08,
         "headline": "Steady growth with a strong defensive base.",
         "desc": "Fixed income dominates. A measured equity allocation adds inflation-beating returns without significant downside risk.",
         "targets": {"Australian Shares": 15, "International Shares": 20,
-                    "Property & REITs": 10, "Fixed Income & Bonds": 40, "Cash & Term Deposits": 15},
-    },
+                    "Property & REITs": 10, "Fixed Income & Bonds": 40, "Cash & Term Deposits": 15}},
     "Balanced": {
         "range": (26, 31), "ret": "5–8% p.a.", "ret_mid": 0.065,
         "draw": "15–25%", "draw_mid": 0.20, "horizon": "5–10 years", "vol": 0.11,
         "headline": "Equal weight on growth and protection.",
         "desc": "The 60/40 model — equities drive returns, bonds cushion corrections. Accepts short-term volatility for long-term gains.",
         "targets": {"Australian Shares": 25, "International Shares": 30,
-                    "Property & REITs": 15, "Fixed Income & Bonds": 22, "Cash & Term Deposits": 8},
-    },
+                    "Property & REITs": 15, "Fixed Income & Bonds": 22, "Cash & Term Deposits": 8}},
     "Growth": {
         "range": (32, 36), "ret": "7–10% p.a.", "ret_mid": 0.08,
         "draw": "25–35%", "draw_mid": 0.30, "horizon": "7–15 years", "vol": 0.15,
         "headline": "Long-term wealth accumulation. Volatility accepted.",
         "desc": "Equity-heavy with a small defensive buffer. Drawdowns of 25–35% are expected and temporary. Requires patience and a long runway.",
         "targets": {"Australian Shares": 30, "International Shares": 40,
-                    "Property & REITs": 15, "Fixed Income & Bonds": 12, "Cash & Term Deposits": 3},
-    },
+                    "Property & REITs": 15, "Fixed Income & Bonds": 12, "Cash & Term Deposits": 3}},
     "Aggressive": {
         "range": (37, 40), "ret": "8–12% p.a.", "ret_mid": 0.09,
         "draw": "35–50%", "draw_mid": 0.425, "horizon": "15+ years", "vol": 0.19,
         "headline": "Maximum long-term growth. High tolerance required.",
         "desc": "Near-full equity exposure. Suitable for very long horizons, stable income, and investors who can hold through severe corrections without panic.",
         "targets": {"Australian Shares": 35, "International Shares": 45,
-                    "Property & REITs": 15, "Fixed Income & Bonds": 5, "Cash & Term Deposits": 0},
-    },
+                    "Property & REITs": 15, "Fixed Income & Bonds": 5, "Cash & Term Deposits": 0}},
 }
 
 STRESS = {
@@ -185,22 +184,19 @@ STRESS = {
         "desc": "Typical pullback. Occurs every 3–5 years on average. Markets have historically recovered within 6–18 months.",
         "rec": 1.0,
         "shocks": {"Australian Shares": -0.18, "International Shares": -0.16,
-                   "Property & REITs": -0.11, "Fixed Income & Bonds": +0.03, "Cash & Term Deposits": 0.0},
-    },
+                   "Property & REITs": -0.11, "Fixed Income & Bonds": +0.03, "Cash & Term Deposits": 0.0}},
     "Bear Market  -30%": {
         "label": "-30%  Bear Market",
         "desc": "COVID March 2020 / 2022 rate-shock level. Recovery typically 1–3 years. Defensive assets absorb meaningful impact.",
         "rec": 2.5,
         "shocks": {"Australian Shares": -0.33, "International Shares": -0.30,
-                   "Property & REITs": -0.22, "Fixed Income & Bonds": +0.06, "Cash & Term Deposits": 0.0},
-    },
+                   "Property & REITs": -0.22, "Fixed Income & Bonds": +0.06, "Cash & Term Deposits": 0.0}},
     "GFC Crash  -50%": {
         "label": "-50%  GFC-Level Crash",
         "desc": "2008–09 scenario. ASX fell 54% peak-to-trough; full recovery took ~5 years. Rare but within historical range.",
         "rec": 5.0,
         "shocks": {"Australian Shares": -0.54, "International Shares": -0.50,
-                   "Property & REITs": -0.42, "Fixed Income & Bonds": +0.09, "Cash & Term Deposits": 0.0},
-    },
+                   "Property & REITs": -0.42, "Fixed Income & Bonds": +0.09, "Cash & Term Deposits": 0.0}},
 }
 
 # ── PURE FUNCTIONS ────────────────────────────────────────────
@@ -242,8 +238,7 @@ def calc_health(h, t, total):
     cd = (h.get("Cash & Term Deposits", 0) + h.get("Fixed Income & Bonds", 0)) / total * 100
     td = t.get("Cash & Term Deposits", 0) + t.get("Fixed Income & Bonds", 0)
     liq = max(0.0, 30.0 - abs(cd - td) * 1.4)
-    total_score = align + divers + liq
-    return round(total_score), round(align), round(divers), round(liq)
+    return round(align + divers + liq), round(align), round(divers), round(liq)
 
 def run_stress(h, total, sc):
     new_total = 0.0
@@ -307,8 +302,7 @@ def smart_alloc(money, h, t, total):
     return res
 
 def cgt_estimate(sell, cb_pct, rate):
-    cost = sell * cb_pct / 100
-    gain = max(0.0, sell - cost)
+    gain = max(0.0, sell - sell * cb_pct / 100)
     return gain * 0.5 * rate / 100
 
 # ── CSS ───────────────────────────────────────────────────────
@@ -316,9 +310,15 @@ st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
-html, body, .stApp, [data-testid="stAppViewContainer"] {{
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {{
     background: {BG} !important;
     font-family: {FH};
+    color: {TEXT} !important;
+}}
+/* Default text dark everywhere (beats a dark theme config). Inline-styled spans
+   and the white button text keep their own colours because those use inline styles. */
+.stApp, .stApp p, .stApp label, .stApp li,
+[data-testid="stMarkdownContainer"], [data-testid="stWidgetLabel"] {{
     color: {TEXT};
 }}
 .block-container {{ padding: 1rem 1.6rem 3rem; max-width: 1100px; }}
@@ -326,137 +326,94 @@ html, body, .stApp, [data-testid="stAppViewContainer"] {{
 .stDeployButton {{ display: none !important; }}
 * {{ box-sizing: border-box; }}
 
-h1, h2, h3, h4 {{
-    font-family: {FH} !important;
-    font-weight: 700 !important;
-    color: {TEXT} !important;
-    margin: 0 !important;
-}}
+h1, h2, h3, h4 {{ font-family: {FH} !important; font-weight: 700 !important; color: {TEXT} !important; margin: 0 !important; }}
+
+/* Tighten vertical gaps */
+[data-testid="stVerticalBlock"] {{ gap: 0.5rem !important; }}
+[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius: 10px !important; }}
 
 /* Tabs */
-.stTabs [data-baseweb="tab-list"] {{
-    gap: 0;
-    border-bottom: 1px solid {BD};
-    background: transparent;
-    padding: 0;
-}}
+.stTabs [data-baseweb="tab-list"] {{ gap: 0; border-bottom: 1px solid {BD}; background: transparent; padding: 0; }}
 .stTabs [data-baseweb="tab"] {{
-    font-family: {FM};
-    font-size: 0.65rem;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: {MUTED};
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    padding: 9px 16px;
-    margin: 0;
+    font-family: {FM}; font-size: 0.65rem; letter-spacing: 0.07em; text-transform: uppercase;
+    color: {MUTED}; background: transparent; border: none;
+    border-bottom: 2px solid transparent; padding: 9px 16px; margin: 0;
 }}
 .stTabs [aria-selected="true"] {{
-    color: {BLUE} !important;
-    border-bottom: 2px solid {BLUE} !important;
-    background: transparent !important;
-    font-weight: 600 !important;
+    color: {PRIMARY} !important; border-bottom: 2px solid {PRIMARY} !important;
+    background: transparent !important; font-weight: 600 !important;
 }}
 .stTabs [data-baseweb="tab-highlight"] {{ display: none !important; }}
 .stTabs [data-baseweb="tab-panel"] {{ padding-top: 1rem; background: transparent; }}
 
 /* Inputs */
-div[data-testid="stNumberInput"] label,
-div[data-testid="stSelectbox"] label {{
-    font-family: {FM} !important;
-    font-size: 0.6rem !important;
-    letter-spacing: 0.09em !important;
-    text-transform: uppercase !important;
-    color: {MUTED} !important;
+div[data-testid="stNumberInput"] label, div[data-testid="stSelectbox"] label {{
+    font-family: {FM} !important; font-size: 0.6rem !important;
+    letter-spacing: 0.09em !important; text-transform: uppercase !important; color: {MUTED} !important;
 }}
 .stNumberInput input {{
-    background: {CARD} !important;
-    border: 1px solid {BD} !important;
-    border-radius: 6px !important;
-    color: {TEXT} !important;
-    font-family: {FM} !important;
-    font-size: 0.88rem !important;
-    padding: 6px 10px !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+    background: {CARD} !important; border: 1px solid {BD} !important; border-radius: 6px !important;
+    color: {TEXT} !important; font-family: {FM} !important; font-size: 0.88rem !important;
+    padding: 6px 10px !important; box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
 }}
 .stNumberInput input:focus {{
-    border-color: {BLUE} !important;
-    box-shadow: 0 0 0 3px rgba(59,111,235,0.12) !important;
-    outline: none !important;
+    border-color: {PRIMARY} !important; box-shadow: 0 0 0 3px rgba(30,142,84,0.14) !important; outline: none !important;
 }}
-.stNumberInput button {{
-    background: {CARD} !important;
-    border-color: {BD} !important;
-    border-radius: 4px !important;
-}}
+.stNumberInput button {{ background: {CARD} !important; border-color: {BD} !important; border-radius: 4px !important; }}
 .stSelectbox > div > div {{
-    background: {CARD} !important;
-    border: 1px solid {BD} !important;
-    border-radius: 6px !important;
-    font-family: {FH} !important;
-    font-size: 0.85rem !important;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
+    background: {CARD} !important; border: 1px solid {BD} !important; border-radius: 6px !important;
+    font-family: {FH} !important; font-size: 0.85rem !important; box-shadow: 0 1px 3px rgba(0,0,0,0.04) !important;
 }}
-[role="listbox"] *, [role="option"] {{
-    background: {CARD} !important;
-    color: {TEXT} !important;
-    font-family: {FH} !important;
-}}
+[role="listbox"] *, [role="option"] {{ background: {CARD} !important; color: {TEXT} !important; font-family: {FH} !important; }}
 
-/* Radio */
-.stRadio > div > label {{
+/* RADIO — force every text node inside the radio to be dark, no matter how Streamlit nests it.
+   The radio circle uses border/background (not color), so this wildcard is safe. */
+div[data-testid="stRadio"] *,
+[data-testid="stRadio"] label *,
+[data-testid="stRadio"] [role="radiogroup"] * {{
+    color: {TEXT} !important;
+}}
+div[data-testid="stRadio"] label p,
+div[data-testid="stRadio"] [data-testid="stMarkdownContainer"] p {{
+    color: {TEXT} !important;
     font-family: {FH} !important;
     font-size: 0.875rem !important;
-    color: {TEXT} !important;
     font-weight: 400 !important;
-    line-height: 1.5 !important;
+    margin: 0 !important;
+    line-height: 1.45 !important;
 }}
+div[data-testid="stRadio"] [role="radiogroup"] > label {{
+    padding: 7px 10px;
+    border-radius: 7px;
+    margin-bottom: 2px;
+    transition: background 0.12s ease;
+    cursor: pointer;
+}}
+div[data-testid="stRadio"] [role="radiogroup"] > label:hover {{
+    background: {PRIMARY_BG};
+}}
+/* the group's own (collapsed) label */
 div[data-testid="stRadio"] > label {{
-    font-family: {FM} !important;
-    font-size: 0.58rem !important;
-    letter-spacing: 0.1em !important;
-    text-transform: uppercase !important;
-    color: {MUTED} !important;
+    font-family: {FM} !important; font-size: 0.58rem !important;
+    letter-spacing: 0.1em !important; text-transform: uppercase !important; color: {MUTED} !important;
 }}
 
 /* Button */
 .stButton > button {{
-    background: {BLUE} !important;
-    color: #ffffff !important;
-    border: none !important;
-    border-radius: 6px !important;
-    font-family: {FH} !important;
-    font-size: 0.88rem !important;
-    font-weight: 600 !important;
-    padding: 8px 22px !important;
-    box-shadow: 0 2px 8px rgba(59,111,235,0.28) !important;
-    transition: opacity 0.15s !important;
+    background: {PRIMARY} !important; color: #ffffff !important; border: none !important;
+    border-radius: 7px !important; font-family: {FH} !important; font-size: 0.9rem !important;
+    font-weight: 600 !important; padding: 9px 24px !important;
+    box-shadow: 0 2px 10px rgba(30,142,84,0.30) !important; transition: all 0.15s !important;
 }}
-.stButton > button:hover {{ opacity: 0.85 !important; }}
+.stButton > button:hover {{ background: {PRIMARY_DK} !important; transform: translateY(-1px) !important;
+    box-shadow: 0 4px 14px rgba(30,142,84,0.38) !important; }}
 
 /* Slider */
 .stSlider label {{
-    font-family: {FM} !important;
-    font-size: 0.6rem !important;
-    letter-spacing: 0.09em !important;
-    text-transform: uppercase !important;
-    color: {MUTED} !important;
+    font-family: {FM} !important; font-size: 0.6rem !important;
+    letter-spacing: 0.09em !important; text-transform: uppercase !important; color: {MUTED} !important;
 }}
-
-/* Expander */
-div[data-testid="stExpander"] {{
-    background: {CARD} !important;
-    border: 1px solid {BD} !important;
-    border-radius: 8px !important;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.05) !important;
-}}
-div[data-testid="stExpander"] summary span {{
-    font-family: {FH} !important;
-    font-size: 0.85rem !important;
-    font-weight: 600 !important;
-    color: {TEXT} !important;
-}}
+.stSlider [data-baseweb="slider"] [role="slider"] {{ background: {PRIMARY} !important; }}
 
 hr {{ border: none; border-top: 1px solid {BD}; margin: 0.8rem 0; }}
 </style>
@@ -466,27 +423,25 @@ hr {{ border: none; border-top: 1px solid {BD}; margin: 0.8rem 0; }}
 # ── UI HELPERS ────────────────────────────────────────────────
 def note(text, kind="info"):
     cfg = {
-        "info":  (BLUE_BG,  BLUE),
-        "good":  (GREEN_BG, GREEN),
-        "warn":  (AMBER_BG, AMBER),
-        "alert": (RED_BG,   RED),
+        "info":  (PRIMARY_BG, PRIMARY),
+        "good":  (GREEN_BG,   GREEN),
+        "warn":  (AMBER_BG,   AMBER),
+        "alert": (RED_BG,     RED),
     }
     bg, ac = cfg.get(kind, cfg["info"])
     st.markdown(
-        f"<div style='background:{bg};border-left:3px solid {ac};"
-        f"border-radius:0 6px 6px 0;padding:8px 12px;margin:5px 0;"
-        f"font-family:{FH};font-size:0.85rem;color:{TEXT};line-height:1.55;'>"
-        f"{text}</div>",
+        f"<div style='background:{bg};border-left:3px solid {ac};border-radius:0 6px 6px 0;"
+        f"padding:8px 12px;margin:5px 0;font-family:{FH};font-size:0.85rem;"
+        f"color:{TEXT};line-height:1.55;'>{text}</div>",
         unsafe_allow_html=True,
     )
 
 
-def sec(label, color=BLUE):
+def sec(label, color=PRIMARY):
     st.markdown(
-        f"<div style='display:flex;align-items:center;gap:8px;margin:16px 0 8px;'>"
+        f"<div style='display:flex;align-items:center;gap:8px;margin:14px 0 7px;'>"
         f"<span style='font-family:{FM};font-size:0.58rem;letter-spacing:0.12em;"
-        f"text-transform:uppercase;color:{color};white-space:nowrap;font-weight:500;'>"
-        f"{label}</span>"
+        f"text-transform:uppercase;color:{color};white-space:nowrap;font-weight:500;'>{label}</span>"
         f"<div style='flex:1;height:1px;background:{BD};'></div></div>",
         unsafe_allow_html=True,
     )
@@ -497,42 +452,39 @@ def kpis(cards):
     for col, (lbl, val, sub, ac, bg) in zip(cols, cards):
         with col:
             st.markdown(
-                f"<div style='background:{bg};border:1px solid {BD};"
-                f"border-top:3px solid {ac};border-radius:0 0 8px 8px;"
-                f"padding:10px 12px;min-width:0;'>"
+                f"<div style='background:{bg};border:1px solid {BD};border-top:3px solid {ac};"
+                f"border-radius:0 0 8px 8px;padding:10px 12px;min-width:0;'>"
                 f"<div style='font-family:{FM};font-size:0.56rem;letter-spacing:0.1em;"
                 f"text-transform:uppercase;color:{MUTED};margin-bottom:3px;"
                 f"overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>{lbl}</div>"
-                f"<div style='font-family:{FM};font-size:1.1rem;color:{ac};"
-                f"font-weight:600;line-height:1.25;word-break:break-word;'>{val}</div>"
-                f"<div style='font-family:{FH};font-size:0.72rem;color:{MUTED};"
-                f"margin-top:2px;line-height:1.35;overflow-wrap:break-word;'>{sub}</div>"
-                f"</div>",
+                f"<div style='font-family:{FM};font-size:1.1rem;color:{ac};font-weight:600;"
+                f"line-height:1.25;word-break:break-word;'>{val}</div>"
+                f"<div style='font-family:{FH};font-size:0.72rem;color:{MUTED};margin-top:2px;"
+                f"line-height:1.35;overflow-wrap:break-word;'>{sub}</div></div>",
                 unsafe_allow_html=True,
             )
 
 
 def tbl(headers, rows):
     hdr = "".join(
-        f"<th style='text-align:left;padding:6px 10px;background:{BG};"
-        f"font-family:{FM};font-size:0.56rem;text-transform:uppercase;"
-        f"letter-spacing:0.09em;color:{MUTED};font-weight:500;"
-        f"white-space:nowrap;border-bottom:1px solid {BD};'>{h}</th>"
+        f"<th style='text-align:left;padding:6px 10px;background:{BG};font-family:{FM};"
+        f"font-size:0.56rem;text-transform:uppercase;letter-spacing:0.09em;color:{MUTED};"
+        f"font-weight:500;white-space:nowrap;border-bottom:1px solid {BD};'>{h}</th>"
         for h in headers
     )
     body = ""
     for i, row in enumerate(rows):
-        bg = CARD if i % 2 == 0 else BG
+        rbg = CARD if i % 2 == 0 else BG
         cells = "".join(
-            f"<td style='padding:7px 10px;font-family:{FH};font-size:0.82rem;"
-            f"color:{TEXT};background:{bg};border-bottom:1px solid {BD};"
-            f"word-break:break-word;overflow-wrap:break-word;max-width:180px;'>{c}</td>"
+            f"<td style='padding:7px 10px;font-family:{FH};font-size:0.82rem;color:{TEXT};"
+            f"background:{rbg};border-bottom:1px solid {BD};word-break:break-word;"
+            f"overflow-wrap:break-word;max-width:180px;'>{c}</td>"
             for c in row
         )
         body += f"<tr>{cells}</tr>"
     st.markdown(
-        f"<div style='border:1px solid {BD};border-radius:8px;overflow:hidden;"
-        f"overflow-x:auto;margin:5px 0 12px;box-shadow:0 1px 4px rgba(0,0,0,0.05);'>"
+        f"<div style='border:1px solid {BD};border-radius:8px;overflow:hidden;overflow-x:auto;"
+        f"margin:5px 0 12px;box-shadow:0 1px 4px rgba(0,0,0,0.05);'>"
         f"<table style='width:100%;border-collapse:collapse;'>"
         f"<thead><tr>{hdr}</tr></thead><tbody>{body}</tbody></table></div>",
         unsafe_allow_html=True,
@@ -552,19 +504,16 @@ def donut(labels, values, colors, center=""):
                 showarrow=False)] if center else []
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        margin=dict(t=8, b=8, l=8, r=8), height=240, showlegend=False,
-        annotations=ann,
+        margin=dict(t=8, b=8, l=8, r=8), height=240, showlegend=False, annotations=ann,
     )
     return fig
 
 
 def bar_pair(x, y_cur, y_tgt):
     fig = go.Figure()
-    fig.add_trace(go.Bar(name="Current", x=x, y=y_cur,
-                         marker_color=AMBER, marker_line_width=0,
+    fig.add_trace(go.Bar(name="Current", x=x, y=y_cur, marker_color=AMBER, marker_line_width=0,
                          hovertemplate="%{x}<br>Current: %{y:.1f}%<extra></extra>"))
-    fig.add_trace(go.Bar(name="Target", x=x, y=y_tgt,
-                         marker_color=BLUE, marker_line_width=0,
+    fig.add_trace(go.Bar(name="Target", x=x, y=y_tgt, marker_color=PRIMARY, marker_line_width=0,
                          hovertemplate="%{x}<br>Target: %{y:.1f}%<extra></extra>"))
     fig.update_layout(
         barmode="group", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
@@ -580,33 +529,26 @@ def bar_pair(x, y_cur, y_tgt):
 
 
 def action_card(title, amount_str, cur_pct, tgt_pct, kind, priority, extra=""):
-    ac  = RED if kind == "sell" else GREEN
-    bg  = RED_BG if kind == "sell" else GREEN_BG
+    ac   = RED if kind == "sell" else GREEN
+    bg   = RED_BG if kind == "sell" else GREEN_BG
     verb = "Sell" if kind == "sell" else "Buy"
     pri_html = (
         f"<span style='font-family:{FM};font-size:0.56rem;letter-spacing:0.09em;"
         f"text-transform:uppercase;color:{ac};margin-top:3px;display:block;'>{priority}</span>"
         if priority else ""
     )
-    extra_html = (
-        f"<span style='color:{MUTED};'> &nbsp;|&nbsp; {extra}</span>"
-        if extra else ""
-    )
+    extra_html = f"<span style='color:{MUTED};'> &nbsp;|&nbsp; {extra}</span>" if extra else ""
     st.markdown(
         f"<div style='background:{CARD};border:1px solid {BD};border-radius:8px;"
         f"border-left:3px solid {ac};padding:10px 14px;margin-bottom:6px;"
         f"box-shadow:0 1px 4px rgba(0,0,0,0.05);'>"
-        f"<div style='display:flex;justify-content:space-between;align-items:center;"
-        f"gap:8px;flex-wrap:wrap;'>"
-        f"<span style='font-family:{FH};font-size:0.9rem;font-weight:600;"
-        f"color:{TEXT};min-width:0;overflow-wrap:break-word;'>{title}</span>"
+        f"<div style='display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;'>"
+        f"<span style='font-family:{FH};font-size:0.9rem;font-weight:600;color:{TEXT};"
+        f"min-width:0;overflow-wrap:break-word;'>{title}</span>"
         f"<span style='background:{bg};color:{ac};font-family:{FM};font-size:0.82rem;"
-        f"font-weight:600;padding:2px 10px;border-radius:4px;white-space:nowrap;'>"
-        f"{verb} {amount_str}</span></div>"
+        f"font-weight:600;padding:2px 10px;border-radius:4px;white-space:nowrap;'>{verb} {amount_str}</span></div>"
         f"<div style='font-family:{FM};font-size:0.7rem;color:{MUTED};margin-top:4px;'>"
-        f"{cur_pct:.1f}% &rarr; {tgt_pct:.0f}%{extra_html}</div>"
-        f"{pri_html}"
-        f"</div>",
+        f"{cur_pct:.1f}% &rarr; {tgt_pct:.0f}%{extra_html}</div>{pri_html}</div>",
         unsafe_allow_html=True,
     )
 
@@ -618,56 +560,51 @@ h_done = tpv() > 0
 hl, hr = st.columns([7, 1], gap="small")
 with hl:
     st.markdown(
-        f"<div style='padding:12px 0 6px;border-bottom:2px solid {BD};margin-bottom:10px;'>"
+        f"<div style='padding:12px 0 6px;border-bottom:2px solid {PRIMARY};margin-bottom:10px;'>"
         f"<div style='display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;'>"
-        f"<span style='font-family:{FM};font-size:1.05rem;font-weight:600;"
-        f"color:{TEXT};letter-spacing:-0.01em;'>Meridian</span>"
-        f"<span style='font-family:{FM};font-size:0.62rem;color:{MUTED};"
-        f"letter-spacing:0.06em;'>Investment Risk &amp; Allocation</span>"
-        f"</div>"
+        f"<span style='font-family:{FM};font-size:1.05rem;font-weight:600;color:{PRIMARY};"
+        f"letter-spacing:-0.01em;'>Meridian</span>"
+        f"<span style='font-family:{FM};font-size:0.62rem;color:{MUTED};letter-spacing:0.06em;'>"
+        f"Investment Risk &amp; Allocation &nbsp;·&nbsp; v6 green</span></div>"
         f"<div style='display:flex;flex-wrap:wrap;gap:5px;margin-top:7px;'>"
         + "".join(
             f"<span style='font-family:{FM};font-size:0.58rem;letter-spacing:0.06em;"
             f"text-transform:uppercase;padding:2px 8px;border-radius:3px;"
-            f"background:{'%s' % (TEXT if done else BD)};"
-            f"color:{'#fff' if done else DIM};'>"
-            f"{'v ' if done else ''}{lbl}</span>"
+            f"background:{(PRIMARY if done else BD)};color:{('#fff' if done else MUTED)};'>"
+            f"{'+ ' if done else ''}{lbl}</span>"
             for lbl, done in [
                 ("Profile", p_done), ("Portfolio", h_done),
                 ("Analysis", p_done and h_done), ("Rebalancing", p_done and h_done),
                 ("Stress Test", p_done and h_done), ("Goals", p_done and h_done),
             ]
         )
-        + f"</div></div>",
+        + "</div></div>",
         unsafe_allow_html=True,
     )
 with hr:
     cur_list = list(CUR_SYM.keys())
     st.markdown("<div style='padding-top:12px;'>", unsafe_allow_html=True)
-    st.selectbox("currency", cur_list,
-                 index=cur_list.index(st.session_state["currency"]),
+    st.selectbox("currency", cur_list, index=cur_list.index(st.session_state["currency"]),
                  key="currency", label_visibility="collapsed")
     st.markdown("</div>", unsafe_allow_html=True)
 
 st.markdown(
-    f"<div style='font-family:{FM};font-size:0.58rem;color:{DIM};"
-    f"padding:3px 0 8px;border-bottom:1px solid {BD};margin-bottom:4px;'>"
-    f"Educational purposes only — not personal financial advice — "
-    f"consult a licensed adviser (AFSL)</div>",
+    f"<div style='font-family:{FM};font-size:0.58rem;color:{DIM};padding:3px 0 8px;"
+    f"border-bottom:1px solid {BD};margin-bottom:4px;'>"
+    f"Educational purposes only — not personal financial advice — consult a licensed adviser (AFSL)</div>",
     unsafe_allow_html=True,
 )
 
 # ── TABS ──────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "Risk Assessment", "Portfolio", "Analysis",
-    "Rebalancing", "Stress Test", "Goal Projections",
+    "Risk Assessment", "Portfolio", "Analysis", "Rebalancing", "Stress Test", "Goal Projections",
 ])
 
 # ══════════════════════════════════════════════════════════════
 # TAB 1 — RISK ASSESSMENT
 # ══════════════════════════════════════════════════════════════
 with tab1:
-    note("Answer all 10 questions honestly. Accuracy here determines the quality of everything that follows.", "info")
+    note("Answer all 10 questions honestly. Your provisional profile updates live as you go — accuracy here determines the quality of everything that follows.", "info")
 
     total_score = 0
     for i, (q, opts, insight) in enumerate(QUESTIONS):
@@ -675,7 +612,7 @@ with tab1:
         with st.container(border=True):
             st.markdown(
                 f"<div style='display:flex;gap:9px;align-items:flex-start;'>"
-                f"<span style='background:{BLUE_BG};color:{BLUE};font-family:{FM};"
+                f"<span style='background:{PRIMARY_BG};color:{PRIMARY};font-family:{FM};"
                 f"font-size:0.6rem;font-weight:700;padding:2px 7px;border-radius:4px;"
                 f"flex-shrink:0;margin-top:2px;'>{i + 1:02d}/{len(QUESTIONS)}</span>"
                 f"<span style='font-family:{FH};font-size:0.95rem;font-weight:600;"
@@ -685,26 +622,45 @@ with tab1:
             idx = st.radio(
                 q, list(range(len(opts))),
                 format_func=lambda x, o=opts: o[x],
-                index=st.session_state[qk],
-                key=f"r_{qk}",
+                index=st.session_state[qk], key=f"r_{qk}",
                 label_visibility="collapsed",
             )
             st.session_state[qk] = idx
             total_score += idx + 1
             st.markdown(
-                f"<div style='font-family:{FH};font-size:0.78rem;color:{MUTED};"
-                f"line-height:1.5;border-top:1px solid {BD};padding-top:7px;'>"
-                f"<strong style='color:{BLUE};'>Why this matters &mdash;</strong> {insight}</div>",
+                f"<div style='font-family:{FH};font-size:0.78rem;color:{MUTED};line-height:1.5;"
+                f"border-top:1px solid {BD};padding-top:7px;'>"
+                f"<strong style='color:{PRIMARY};'>Why this matters &mdash;</strong> {insight}</div>",
                 unsafe_allow_html=True,
             )
 
-    st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
+    # Live provisional profile preview
+    prov = gprof(total_score)
+    prov_clr = PROFILE_CLR[prov]
+    prov_bg  = PROFILE_BG[prov]
+    prov_pct = ((total_score - 10) / 30) * 100
+    st.markdown(
+        f"<div style='background:{prov_bg};border:1px solid {BD};border-left:4px solid {prov_clr};"
+        f"border-radius:0 10px 10px 0;padding:12px 16px;margin:10px 0;'>"
+        f"<div style='display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;'>"
+        f"<div>"
+        f"<div style='font-family:{FM};font-size:0.56rem;letter-spacing:0.1em;"
+        f"text-transform:uppercase;color:{MUTED};'>Live preview &mdash; updates as you answer</div>"
+        f"<div style='font-family:{FH};font-size:1.3rem;font-weight:700;color:{prov_clr};'>{prov}</div>"
+        f"</div>"
+        f"<div style='font-family:{FM};font-size:0.85rem;color:{MUTED};white-space:nowrap;'>"
+        f"{total_score}/40</div></div>"
+        f"<div style='height:6px;background:rgba(0,0,0,0.07);border-radius:3px;margin-top:8px;overflow:hidden;'>"
+        f"<div style='width:{prov_pct:.0f}%;height:100%;background:{prov_clr};border-radius:3px;'></div></div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
     col_b, _ = st.columns([2, 5])
     with col_b:
-        if st.button("Calculate my profile"):
-            pn = gprof(total_score)
+        if st.button("Lock in my profile"):
             st.session_state["risk_score"]   = total_score
-            st.session_state["risk_profile"] = pn
+            st.session_state["risk_profile"] = prov
             st.session_state["profile_done"] = True
             st.rerun()
 
@@ -718,75 +674,61 @@ with tab1:
         tgts  = prof["targets"]
         tv    = tpv()
 
-        sec("RESULT", pac)
+        sec("LOCKED PROFILE", pac)
         st.markdown(
-            f"<div style='background:{pbg};border:1px solid {BD};"
-            f"border-left:4px solid {pac};border-radius:0 8px 8px 0;"
-            f"padding:14px 16px;margin-bottom:10px;'>"
-            f"<div style='display:flex;justify-content:space-between;"
-            f"align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:5px;'>"
-            f"<div>"
+            f"<div style='background:{pbg};border:1px solid {BD};border-left:4px solid {pac};"
+            f"border-radius:0 8px 8px 0;padding:14px 16px;margin-bottom:8px;'>"
+            f"<div style='display:flex;justify-content:space-between;align-items:flex-start;"
+            f"gap:8px;flex-wrap:wrap;margin-bottom:5px;'><div>"
             f"<div style='font-family:{FM};font-size:0.58rem;letter-spacing:0.1em;"
             f"text-transform:uppercase;color:{MUTED};margin-bottom:3px;'>Risk Profile</div>"
-            f"<div style='font-family:{FH};font-size:1.5rem;font-weight:700;"
-            f"color:{pac};line-height:1.2;'>{pname}</div>"
-            f"<div style='font-family:{FH};font-size:0.82rem;color:{MUTED};"
-            f"margin-top:2px;'>{prof['headline']}</div>"
-            f"</div>"
-            f"<span style='font-family:{FM};font-size:0.75rem;color:{MUTED};"
-            f"white-space:nowrap;'>Score: {score}/40</span>"
-            f"</div>"
-            f"<div style='height:4px;background:rgba(0,0,0,0.08);"
-            f"border-radius:2px;overflow:hidden;margin-bottom:8px;'>"
+            f"<div style='font-family:{FH};font-size:1.5rem;font-weight:700;color:{pac};"
+            f"line-height:1.2;'>{pname}</div>"
+            f"<div style='font-family:{FH};font-size:0.82rem;color:{MUTED};margin-top:2px;'>"
+            f"{prof['headline']}</div></div>"
+            f"<span style='font-family:{FM};font-size:0.75rem;color:{MUTED};white-space:nowrap;'>"
+            f"Score: {score}/40</span></div>"
+            f"<div style='height:4px;background:rgba(0,0,0,0.08);border-radius:2px;overflow:hidden;margin-bottom:8px;'>"
             f"<div style='width:{pct:.0f}%;height:100%;background:{pac};'></div></div>"
-            f"<div style='font-family:{FH};font-size:0.83rem;color:{TEXT};"
-            f"line-height:1.55;opacity:0.85;'>{prof['desc']}</div>"
-            f"</div>",
+            f"<div style='font-family:{FH};font-size:0.83rem;color:{TEXT};line-height:1.55;opacity:0.85;'>"
+            f"{prof['desc']}</div></div>",
             unsafe_allow_html=True,
         )
 
         if tv > 0:
             kpis([
-                ("Expected return",  prof["ret"],           "Historical p.a.",     pac,   PROFILE_BG[pname]),
-                ("Max drawdown",     prof["draw"],          "Typical correction",  RED,   RED_BG),
-                ("Dollar drawdown",  fmt(tv * prof["draw_mid"]), "At current value", RED, RED_BG),
-                ("Min horizon",      prof["horizon"],       "Recommended",         MUTED, BG),
+                ("Expected return", prof["ret"], "Historical p.a.", pac, pbg),
+                ("Max drawdown", prof["draw"], "Typical correction", RED, RED_BG),
+                ("Dollar drawdown", fmt(tv * prof["draw_mid"]), "At current value", RED, RED_BG),
+                ("Min horizon", prof["horizon"], "Recommended", MUTED, BG),
             ])
         else:
             kpis([
-                ("Expected return", prof["ret"],  "Historical p.a.",    pac,   PROFILE_BG[pname]),
-                ("Max drawdown",    prof["draw"], "Typical correction", RED,   RED_BG),
-                ("Min horizon",     prof["horizon"], "Recommended",     MUTED, BG),
+                ("Expected return", prof["ret"], "Historical p.a.", pac, pbg),
+                ("Max drawdown", prof["draw"], "Typical correction", RED, RED_BG),
+                ("Min horizon", prof["horizon"], "Recommended", MUTED, BG),
             ])
 
         sec("TARGET ALLOCATION", pac)
         at = {k: v for k, v in tgts.items() if v > 0}
         c1, c2 = st.columns(2, gap="small")
         with c1:
-            st.plotly_chart(
-                donut(list(at.keys()), list(at.values()),
-                      [ASSET_CLR[ASSET_NAMES.index(k)] for k in at]),
-                use_container_width=True,
-            )
+            st.plotly_chart(donut(list(at.keys()), list(at.values()),
+                                  [ASSET_CLR[ASSET_NAMES.index(k)] for k in at]),
+                            use_container_width=True)
         with c2:
-            st.markdown("<div style='padding-top:8px;'>", unsafe_allow_html=True)
             for an, pv2 in tgts.items():
                 clr = ASSET_CLR[ASSET_NAMES.index(an)]
                 st.markdown(
-                    f"<div style='display:flex;align-items:center;gap:8px;"
-                    f"padding:5px 0;border-bottom:1px solid {BD};min-width:0;'>"
-                    f"<div style='width:8px;height:8px;border-radius:50%;"
-                    f"background:{clr};flex-shrink:0;'></div>"
-                    f"<div style='font-family:{FH};font-size:0.82rem;color:{TEXT};"
-                    f"flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;"
-                    f"white-space:nowrap;'>{an}</div>"
-                    f"<div style='background:{clr}22;color:{clr};font-family:{FM};"
-                    f"font-size:0.78rem;font-weight:600;padding:2px 8px;"
-                    f"border-radius:3px;flex-shrink:0;'>{pv2}%</div>"
-                    f"</div>",
+                    f"<div style='display:flex;align-items:center;gap:8px;padding:5px 0;"
+                    f"border-bottom:1px solid {BD};min-width:0;'>"
+                    f"<div style='width:8px;height:8px;border-radius:50%;background:{clr};flex-shrink:0;'></div>"
+                    f"<div style='font-family:{FH};font-size:0.82rem;color:{TEXT};flex:1;min-width:0;"
+                    f"overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>{an}</div>"
+                    f"<div style='background:{clr}22;color:{clr};font-family:{FM};font-size:0.78rem;"
+                    f"font-weight:600;padding:2px 8px;border-radius:3px;flex-shrink:0;'>{pv2}%</div></div>",
                     unsafe_allow_html=True,
                 )
-            st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -805,23 +747,20 @@ with tab2:
             "Govt & corp bonds, bond ETFs, term deposits 1yr+",
             "Savings accounts, term deposits under 1yr, offset accounts",
         ]
+        cbgs = [PRIMARY_BG, TEAL_BG, AMBER_BG, PURPLE_BG, BLUE_BG]
         ca, cb = st.columns(2, gap="large")
         for i, (an, key, desc) in enumerate(zip(ASSET_NAMES, ASSET_KEYS, descs)):
             col = ca if i < 3 else cb
             with col:
                 clr = ASSET_CLR[i]
-                cbg = [BLUE_BG, GREEN_BG, AMBER_BG, PURPLE_BG, TEAL_BG][i]
                 st.markdown(
-                    f"<div style='background:{cbg};border-left:3px solid {clr};"
+                    f"<div style='background:{cbgs[i]};border-left:3px solid {clr};"
                     f"border-radius:0 6px 6px 0;padding:7px 10px;margin-bottom:3px;'>"
-                    f"<div style='font-family:{FH};font-size:0.85rem;font-weight:600;"
-                    f"color:{TEXT};'>{an}</div>"
-                    f"<div style='font-family:{FH};font-size:0.72rem;color:{MUTED};'>{desc}</div>"
-                    f"</div>",
+                    f"<div style='font-family:{FH};font-size:0.85rem;font-weight:600;color:{TEXT};'>{an}</div>"
+                    f"<div style='font-family:{FH};font-size:0.72rem;color:{MUTED};'>{desc}</div></div>",
                     unsafe_allow_html=True,
                 )
-                st.number_input(an, min_value=0, step=1000, key=key,
-                                label_visibility="collapsed")
+                st.number_input(an, min_value=0, step=1000, key=key, label_visibility="collapsed")
 
         total = tpv()
         if not total:
@@ -833,7 +772,7 @@ with tab2:
             tgts     = PROFILES[pname]["targets"]
             hs, ha, hd, hl = calc_health(holdings, tgts, total)
 
-            sec("PORTFOLIO HEALTH", BLUE)
+            sec("PORTFOLIO HEALTH")
             hclr = GREEN if hs >= 75 else (AMBER if hs >= 50 else RED)
             hbg  = GREEN_BG if hs >= 75 else (AMBER_BG if hs >= 50 else RED_BG)
             hlbl = "On track" if hs >= 75 else ("Needs attention" if hs >= 50 else "Action required")
@@ -841,46 +780,37 @@ with tab2:
             h1, h2 = st.columns([1, 2], gap="small")
             with h1:
                 st.markdown(
-                    f"<div style='background:{hbg};border:1px solid {BD};"
-                    f"border-radius:8px;padding:14px;text-align:center;'>"
+                    f"<div style='background:{hbg};border:1px solid {BD};border-radius:10px;"
+                    f"padding:14px;text-align:center;'>"
                     f"<div style='font-family:{FM};font-size:0.56rem;letter-spacing:0.1em;"
                     f"text-transform:uppercase;color:{MUTED};margin-bottom:6px;'>Health Score</div>"
-                    f"<div style='font-family:{FM};font-size:2.8rem;font-weight:600;"
-                    f"color:{hclr};line-height:1;'>{hs}</div>"
+                    f"<div style='font-family:{FM};font-size:2.8rem;font-weight:600;color:{hclr};line-height:1;'>{hs}</div>"
                     f"<div style='font-family:{FM};font-size:0.6rem;color:{MUTED};'>/100</div>"
-                    f"<div style='background:{hclr};color:#fff;font-family:{FH};"
-                    f"font-size:0.75rem;font-weight:600;padding:3px 12px;"
-                    f"border-radius:3px;margin-top:8px;display:inline-block;'>{hlbl}</div>"
-                    f"<div style='height:4px;background:rgba(0,0,0,0.08);"
-                    f"border-radius:2px;margin-top:10px;overflow:hidden;'>"
-                    f"<div style='width:{hs}%;height:100%;background:{hclr};'></div>"
-                    f"</div></div>",
+                    f"<div style='background:{hclr};color:#fff;font-family:{FH};font-size:0.75rem;"
+                    f"font-weight:600;padding:3px 12px;border-radius:3px;margin-top:8px;display:inline-block;'>{hlbl}</div>"
+                    f"<div style='height:4px;background:rgba(0,0,0,0.08);border-radius:2px;margin-top:10px;overflow:hidden;'>"
+                    f"<div style='width:{hs}%;height:100%;background:{hclr};'></div></div></div>",
                     unsafe_allow_html=True,
                 )
             with h2:
-                for lbl, sc, tot, tip_txt in [
-                    ("Alignment",        ha, 40, f"{ha}/40 — gap vs {pname} target"),
-                    ("Diversification",  hd, 30, f"{hd}/30 — spread across asset classes"),
+                for lbl, scv, tot, tip_txt in [
+                    ("Alignment", ha, 40, f"{ha}/40 — gap vs {pname} target"),
+                    ("Diversification", hd, 30, f"{hd}/30 — spread across asset classes"),
                     ("Defensive buffer", hl, 30, f"{hl}/30 — cash & bonds vs target"),
                 ]:
-                    bar = sc / tot * 100
-                    c2 = GREEN if bar >= 70 else (AMBER if bar >= 40 else RED)
+                    bar = scv / tot * 100
+                    c2  = GREEN if bar >= 70 else (AMBER if bar >= 40 else RED)
                     c2bg = GREEN_BG if bar >= 70 else (AMBER_BG if bar >= 40 else RED_BG)
                     st.markdown(
-                        f"<div style='background:{c2bg};border:1px solid {BD};"
-                        f"border-radius:6px;padding:8px 12px;margin-bottom:5px;'>"
-                        f"<div style='display:flex;justify-content:space-between;"
-                        f"align-items:center;margin-bottom:4px;gap:8px;'>"
-                        f"<span style='font-family:{FH};font-size:0.83rem;"
-                        f"font-weight:600;color:{TEXT};'>{lbl}</span>"
-                        f"<span style='background:{c2};color:#fff;font-family:{FM};"
-                        f"font-size:0.68rem;font-weight:600;padding:1px 7px;"
-                        f"border-radius:3px;white-space:nowrap;'>{sc}/{tot}</span></div>"
-                        f"<div style='height:4px;background:rgba(0,0,0,0.08);"
-                        f"border-radius:2px;overflow:hidden;margin-bottom:4px;'>"
+                        f"<div style='background:{c2bg};border:1px solid {BD};border-radius:8px;"
+                        f"padding:8px 12px;margin-bottom:5px;'>"
+                        f"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:8px;'>"
+                        f"<span style='font-family:{FH};font-size:0.83rem;font-weight:600;color:{TEXT};'>{lbl}</span>"
+                        f"<span style='background:{c2};color:#fff;font-family:{FM};font-size:0.68rem;"
+                        f"font-weight:600;padding:1px 7px;border-radius:3px;white-space:nowrap;'>{scv}/{tot}</span></div>"
+                        f"<div style='height:4px;background:rgba(0,0,0,0.08);border-radius:2px;overflow:hidden;margin-bottom:4px;'>"
                         f"<div style='width:{bar:.0f}%;height:100%;background:{c2};'></div></div>"
-                        f"<div style='font-family:{FH};font-size:0.72rem;color:{MUTED};'>{tip_txt}</div>"
-                        f"</div>",
+                        f"<div style='font-family:{FH};font-size:0.72rem;color:{MUTED};'>{tip_txt}</div></div>",
                         unsafe_allow_html=True,
                     )
 
@@ -893,23 +823,20 @@ with tab2:
             else:
                 note("Some gaps to close. The Rebalancing tab shows the most tax-efficient path.", "warn")
 
-            sec("CURRENT ALLOCATION", BLUE)
+            sec("CURRENT ALLOCATION")
             kpis([
-                ("Total portfolio", fmt(total),             "All asset classes",   TEXT,  BG),
-                ("Asset classes",   str(len(active)),       "of 5 held",           BLUE,  BLUE_BG),
-                ("Largest position",max(active, key=active.get)[:14], f"{max(active.values()) / total * 100:.0f}%", AMBER, AMBER_BG),
-                ("Health score",    f"{hs}/100",            "Alignment · Spread",  hclr,  hbg),
+                ("Total portfolio", fmt(total), "All asset classes", TEXT, BG),
+                ("Asset classes", str(len(active)), "of 5 held", PRIMARY, PRIMARY_BG),
+                ("Largest position", max(active, key=active.get)[:14], f"{max(active.values()) / total * 100:.0f}%", AMBER, AMBER_BG),
+                ("Health score", f"{hs}/100", "Alignment · Spread", hclr, hbg),
             ])
             st.markdown("<div style='height:4px;'></div>", unsafe_allow_html=True)
             c1, c2 = st.columns(2, gap="small")
             with c1:
-                st.plotly_chart(
-                    donut(list(active.keys()), list(active.values()),
-                          [ASSET_CLR[ASSET_NAMES.index(k)] for k in active], fmt(total)),
-                    use_container_width=True,
-                )
+                st.plotly_chart(donut(list(active.keys()), list(active.values()),
+                                      [ASSET_CLR[ASSET_NAMES.index(k)] for k in active], fmt(total)),
+                                use_container_width=True)
             with c2:
-                st.markdown("<div style='padding-top:8px;'>", unsafe_allow_html=True)
                 for an in sorted(holdings, key=lambda x: holdings[x], reverse=True):
                     v = holdings[an]
                     if not v:
@@ -917,21 +844,15 @@ with tab2:
                     pct2 = v / total * 100
                     clr  = ASSET_CLR[ASSET_NAMES.index(an)]
                     st.markdown(
-                        f"<div style='display:flex;align-items:center;gap:8px;"
-                        f"padding:5px 0;border-bottom:1px solid {BD};min-width:0;'>"
-                        f"<div style='width:8px;height:8px;border-radius:50%;"
-                        f"background:{clr};flex-shrink:0;'></div>"
-                        f"<div style='font-family:{FH};font-size:0.82rem;color:{TEXT};"
-                        f"flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;"
-                        f"white-space:nowrap;'>{an}</div>"
-                        f"<div style='font-family:{FM};font-size:0.7rem;color:{MUTED};"
-                        f"flex-shrink:0;margin-right:5px;'>{pct2:.1f}%</div>"
-                        f"<div style='font-family:{FM};font-size:0.8rem;font-weight:600;"
-                        f"color:{TEXT};flex-shrink:0;'>{fmt(v)}</div>"
-                        f"</div>",
+                        f"<div style='display:flex;align-items:center;gap:8px;padding:5px 0;"
+                        f"border-bottom:1px solid {BD};min-width:0;'>"
+                        f"<div style='width:8px;height:8px;border-radius:50%;background:{clr};flex-shrink:0;'></div>"
+                        f"<div style='font-family:{FH};font-size:0.82rem;color:{TEXT};flex:1;min-width:0;"
+                        f"overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'>{an}</div>"
+                        f"<div style='font-family:{FM};font-size:0.7rem;color:{MUTED};flex-shrink:0;margin-right:5px;'>{pct2:.1f}%</div>"
+                        f"<div style='font-family:{FM};font-size:0.8rem;font-weight:600;color:{TEXT};flex-shrink:0;'>{fmt(v)}</div></div>",
                         unsafe_allow_html=True,
                     )
-                st.markdown("</div>", unsafe_allow_html=True)
 
             for an, v in holdings.items():
                 if v and v / total * 100 > 60:
@@ -956,34 +877,28 @@ with tab3:
         pbg      = PROFILE_BG[pname]
 
         st.markdown(
-            f"<div style='background:{pbg};border-left:3px solid {pac};"
-            f"border-radius:0 6px 6px 0;padding:8px 12px;margin-bottom:6px;'>"
+            f"<div style='background:{pbg};border-left:3px solid {pac};border-radius:0 6px 6px 0;"
+            f"padding:8px 12px;margin-bottom:6px;'>"
             f"<span style='font-family:{FH};font-size:0.85rem;color:{TEXT};'>"
-            f"Profile: <strong style='color:{pac};'>{pname}</strong> — "
-            f"comparing your current allocation to the recommended target.</span></div>",
+            f"Profile: <strong style='color:{pac};'>{pname}</strong> — comparing your current allocation to target.</span></div>",
             unsafe_allow_html=True,
         )
 
-        sec("CURRENT VS TARGET", BLUE)
+        sec("CURRENT VS TARGET")
         short = [a.split("&")[0].strip()[:12] for a in ASSET_NAMES]
-        st.plotly_chart(
-            bar_pair(short,
-                     [holdings.get(a, 0) / total * 100 for a in ASSET_NAMES],
-                     [tgts.get(a, 0) for a in ASSET_NAMES]),
-            use_container_width=True,
-        )
+        st.plotly_chart(bar_pair(short,
+                                 [holdings.get(a, 0) / total * 100 for a in ASSET_NAMES],
+                                 [tgts.get(a, 0) for a in ASSET_NAMES]),
+                        use_container_width=True)
 
-        sec("GAP ANALYSIS", BLUE)
-        rows   = []
-        overs  = []
-        unders = []
+        sec("GAP ANALYSIS")
+        rows, overs, unders = [], [], []
         for an in ASSET_NAMES:
             cp  = holdings.get(an, 0) / total * 100
             tp  = tgts.get(an, 0)
             gap = cp - tp
             cv  = holdings.get(an, 0)
             tv2 = total * tp / 100
-            dv  = cv - tv2
             if gap > 5:
                 st2 = f"<span style='color:{RED};font-family:{FM};font-size:0.75rem;font-weight:600;'>+{gap:.1f}% over</span>"
                 overs.append((an, gap))
@@ -992,8 +907,7 @@ with tab3:
                 unders.append((an, gap))
             else:
                 st2 = f"<span style='color:{GREEN};font-family:{FM};font-size:0.75rem;font-weight:600;'>on target</span>"
-            rows.append([an, f"{cp:.1f}%", f"{tp:.0f}%", st2, fmt(cv), fmt(tv2), fmt(dv)])
-
+            rows.append([an, f"{cp:.1f}%", f"{tp:.0f}%", st2, fmt(cv), fmt(tv2), fmt(cv - tv2)])
         tbl(["Asset", "Current", "Target", "Status", "Value", "Target Value", "Gap"], rows)
 
         if overs:
@@ -1005,34 +919,24 @@ with tab3:
         if not overs and not unders:
             note("Portfolio is well-aligned to your risk profile. Review quarterly.", "good")
 
-        sec("VISUAL COMPARISON", BLUE)
+        sec("VISUAL COMPARISON")
         cl, cr = st.columns(2, gap="small")
         with cl:
-            st.markdown(
-                f"<div style='font-family:{FM};font-size:0.56rem;letter-spacing:0.1em;"
-                f"text-transform:uppercase;color:{MUTED};text-align:center;margin-bottom:4px;'>"
-                f"Current</div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"<div style='font-family:{FM};font-size:0.56rem;letter-spacing:0.1em;"
+                        f"text-transform:uppercase;color:{MUTED};text-align:center;margin-bottom:4px;'>Current</div>",
+                        unsafe_allow_html=True)
             a_a = {k: v for k, v in holdings.items() if v > 0}
-            st.plotly_chart(
-                donut(list(a_a.keys()), list(a_a.values()),
-                      [ASSET_CLR[ASSET_NAMES.index(k)] for k in a_a], "Current"),
-                use_container_width=True,
-            )
+            st.plotly_chart(donut(list(a_a.keys()), list(a_a.values()),
+                                  [ASSET_CLR[ASSET_NAMES.index(k)] for k in a_a], "Current"),
+                            use_container_width=True)
         with cr:
-            st.markdown(
-                f"<div style='font-family:{FM};font-size:0.56rem;letter-spacing:0.1em;"
-                f"text-transform:uppercase;color:{MUTED};text-align:center;margin-bottom:4px;'>"
-                f"Target — {pname}</div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"<div style='font-family:{FM};font-size:0.56rem;letter-spacing:0.1em;"
+                        f"text-transform:uppercase;color:{MUTED};text-align:center;margin-bottom:4px;'>Target — {pname}</div>",
+                        unsafe_allow_html=True)
             t_a = {k: v for k, v in tgts.items() if v > 0}
-            st.plotly_chart(
-                donut(list(t_a.keys()), list(t_a.values()),
-                      [ASSET_CLR[ASSET_NAMES.index(k)] for k in t_a], pname[:4] + "."),
-                use_container_width=True,
-            )
+            st.plotly_chart(donut(list(t_a.keys()), list(t_a.values()),
+                                  [ASSET_CLR[ASSET_NAMES.index(k)] for k in t_a], pname[:4] + "."),
+                            use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1054,13 +958,11 @@ with tab4:
         sec("TAX SETTINGS", AMBER)
         c1, c2 = st.columns(2, gap="large")
         with c1:
-            st.session_state["cgt_rate"] = st.slider(
-                "Marginal tax rate (%)", 0, 47, int(st.session_state["cgt_rate"]), 1)
+            st.session_state["cgt_rate"] = st.slider("Marginal tax rate (%)", 0, 47, int(st.session_state["cgt_rate"]), 1)
         with c2:
-            st.session_state["cost_base_pct"] = st.slider(
-                "Cost base as % of current value", 20, 100,
-                int(st.session_state["cost_base_pct"]), 5,
-                help="e.g. bought at $50k, now worth $100k → set to 50%")
+            st.session_state["cost_base_pct"] = st.slider("Cost base as % of current value", 20, 100,
+                                                          int(st.session_state["cost_base_pct"]), 5,
+                                                          help="e.g. bought at $50k, now worth $100k → set to 50%")
 
         sells, buys, holds = [], [], []
         for an in ASSET_NAMES:
@@ -1082,8 +984,7 @@ with tab4:
         if sells:
             sec("REDUCE — OVERWEIGHT", RED)
             for i, (an, amt, cp, tp) in enumerate(sells):
-                cgt_e = cgt_estimate(amt, st.session_state["cost_base_pct"],
-                                     st.session_state["cgt_rate"])
+                cgt_e = cgt_estimate(amt, st.session_state["cost_base_pct"], st.session_state["cgt_rate"])
                 action_card(an, fmt(amt), cp, tp, "sell",
                             "High priority" if i == 0 else "",
                             f"Est. CGT: {fmt(cgt_e)}  |  Net: {fmt(amt - cgt_e)}")
@@ -1091,8 +992,7 @@ with tab4:
         if buys:
             sec("INCREASE — UNDERWEIGHT", GREEN)
             for i, (an, amt, cp, tp) in enumerate(buys):
-                action_card(an, fmt(amt), cp, tp, "buy",
-                            "High priority" if i == 0 else "")
+                action_card(an, fmt(amt), cp, tp, "buy", "High priority" if i == 0 else "")
 
         if holds:
             sec("HOLD — ON TARGET", MUTED)
@@ -1100,28 +1000,23 @@ with tab4:
                 f"<span style='color:{GREEN};font-weight:600;'>&#10003;</span> {a} ({c:.1f}%)"
                 for a, c, _ in holds
             )
-            st.markdown(
-                f"<div style='font-family:{FH};font-size:0.83rem;color:{MUTED};"
-                f"padding:4px 0;'>{hold_html}</div>",
-                unsafe_allow_html=True,
-            )
+            st.markdown(f"<div style='font-family:{FH};font-size:0.83rem;color:{MUTED};padding:4px 0;'>{hold_html}</div>",
+                        unsafe_allow_html=True)
 
         sec("SMART CONTRIBUTION ALLOCATOR", GREEN)
         note("Direct new contributions into underweight assets — no selling, no CGT, maximum efficiency.", "good")
         new_money = st.number_input("New amount to invest", min_value=0, step=500, value=10000)
         if new_money > 0:
             allocs = smart_alloc(new_money, holdings, tgts, total)
-            alloc_rows = [
-                [an, fmt(amt), f"{amt / new_money * 100:.0f}%", "Closes underweight gap"]
-                for an, amt in allocs.items() if amt > 0
-            ]
+            alloc_rows = [[an, fmt(amt), f"{amt / new_money * 100:.0f}%", "Closes underweight gap"]
+                          for an, amt in allocs.items() if amt > 0]
             if alloc_rows:
                 tbl(["Asset", "Allocate", "% of New Money", "Rationale"], alloc_rows)
                 note(f"Investing {fmt(new_money)} this way reduces gap to target with no capital gains event.", "good")
             else:
                 note("Portfolio is already on target — contribute proportionally to target weights.", "good")
 
-        sec("FULL SUMMARY", BLUE)
+        sec("FULL SUMMARY")
         total_cgt = 0
         srows = []
         for an in ASSET_NAMES:
@@ -1131,29 +1026,23 @@ with tab4:
             tv2  = total * tp / 100
             diff = tv2 - cv
             if diff > 500:
-                act      = f"<span style='color:{GREEN};font-family:{FM};font-size:0.8rem;font-weight:600;'>Buy {fmt(diff)}</span>"
+                act = f"<span style='color:{GREEN};font-family:{FM};font-size:0.8rem;font-weight:600;'>Buy {fmt(diff)}</span>"
                 cgt_cell = "—"
             elif diff < -500:
-                cgt_e     = cgt_estimate(abs(diff), st.session_state["cost_base_pct"],
-                                         st.session_state["cgt_rate"])
+                cgt_e = cgt_estimate(abs(diff), st.session_state["cost_base_pct"], st.session_state["cgt_rate"])
                 total_cgt += cgt_e
-                act       = f"<span style='color:{RED};font-family:{FM};font-size:0.8rem;font-weight:600;'>Sell {fmt(abs(diff))}</span>"
-                cgt_cell  = f"<span style='color:{AMBER};font-family:{FM};'>{fmt(cgt_e)}</span>"
+                act = f"<span style='color:{RED};font-family:{FM};font-size:0.8rem;font-weight:600;'>Sell {fmt(abs(diff))}</span>"
+                cgt_cell = f"<span style='color:{AMBER};font-family:{FM};'>{fmt(cgt_e)}</span>"
             else:
-                act      = f"<span style='color:{MUTED};font-family:{FM};font-size:0.8rem;'>Hold</span>"
+                act = f"<span style='color:{MUTED};font-family:{FM};font-size:0.8rem;'>Hold</span>"
                 cgt_cell = "—"
             srows.append([an, f"{cp:.1f}%", fmt(cv), f"{tp:.0f}%", fmt(tv2), act, cgt_cell])
-
         tbl(["Asset", "Current %", "Value", "Target %", "Target Value", "Action", "Est. CGT"], srows)
         if total_cgt > 0:
             note(f"Total estimated CGT on these sells: {fmt(total_cgt)} (50% discount applied for assets held 12+ months). Confirm with your accountant.", "warn")
 
         sec("EXECUTION NOTES", MUTED)
-        exec_cfg = {
-            "good":  (GREEN_BG, GREEN),
-            "warn":  (AMBER_BG, AMBER),
-            "info":  (BLUE_BG,  BLUE),
-        }
+        exec_cfg = {"good": (GREEN_BG, GREEN), "warn": (AMBER_BG, AMBER), "info": (PRIMARY_BG, PRIMARY)}
         for title, txt, kind in [
             ("Super first", "No CGT on sales inside an accumulation-phase super fund. Always rebalance within super before acting on non-super assets.", "good"),
             ("Use contributions", "Directing new money into underweights avoids selling and CGT entirely. Most efficient method over a 12–24 month horizon.", "good"),
@@ -1162,13 +1051,10 @@ with tab4:
         ]:
             ebg, eac = exec_cfg.get(kind, exec_cfg["info"])
             st.markdown(
-                f"<div style='background:{CARD};border:1px solid {BD};"
-                f"border-left:3px solid {eac};border-radius:0 6px 6px 0;"
-                f"padding:8px 12px;margin-bottom:5px;'>"
-                f"<div style='font-family:{FH};font-size:0.83rem;font-weight:600;"
-                f"color:{eac};margin-bottom:2px;'>{title}</div>"
-                f"<div style='font-family:{FH};font-size:0.8rem;color:{MUTED};"
-                f"line-height:1.5;'>{txt}</div></div>",
+                f"<div style='background:{CARD};border:1px solid {BD};border-left:3px solid {eac};"
+                f"border-radius:0 6px 6px 0;padding:8px 12px;margin-bottom:5px;'>"
+                f"<div style='font-family:{FH};font-size:0.83rem;font-weight:600;color:{eac};margin-bottom:2px;'>{title}</div>"
+                f"<div style='font-family:{FH};font-size:0.8rem;color:{MUTED};line-height:1.5;'>{txt}</div></div>",
                 unsafe_allow_html=True,
             )
 
@@ -1190,28 +1076,24 @@ with tab5:
         note("Stress testing converts abstract percentage declines into actual dollar impacts on your specific portfolio. These are calibrated historical scenarios, not predictions.", "info")
 
         sec("SCENARIO", RED)
-        scen_name = st.radio("Scenario", list(STRESS.keys()), horizontal=True,
-                             label_visibility="collapsed")
+        scen_name = st.radio("Scenario", list(STRESS.keys()), horizontal=True, label_visibility="collapsed")
         sc = STRESS[scen_name]
         nt, net_loss, bd = run_stress(holdings, total, sc)
         pct_loss = abs(net_loss) / total * 100
 
         st.markdown(
-            f"<div style='background:{RED_BG};border:1px solid #FECACA;"
-            f"border-left:3px solid {RED};border-radius:0 8px 8px 0;"
-            f"padding:10px 14px;margin:6px 0;'>"
-            f"<div style='font-family:{FM};font-size:0.78rem;font-weight:600;"
-            f"color:{RED};margin-bottom:3px;'>{sc['label']}</div>"
-            f"<div style='font-family:{FH};font-size:0.83rem;color:{TEXT};"
-            f"line-height:1.5;'>{sc['desc']}</div></div>",
+            f"<div style='background:{RED_BG};border:1px solid #F2C9C3;border-left:3px solid {RED};"
+            f"border-radius:0 8px 8px 0;padding:10px 14px;margin:6px 0;'>"
+            f"<div style='font-family:{FM};font-size:0.78rem;font-weight:600;color:{RED};margin-bottom:3px;'>{sc['label']}</div>"
+            f"<div style='font-family:{FH};font-size:0.83rem;color:{TEXT};line-height:1.5;'>{sc['desc']}</div></div>",
             unsafe_allow_html=True,
         )
 
         kpis([
-            ("Before",          fmt(total),    "Current value",       TEXT,  BG),
-            ("Estimated loss",  fmt(net_loss), f"-{pct_loss:.1f}%",   RED,   RED_BG),
-            ("Portfolio after", fmt(nt),       "Post-crash estimate", AMBER, AMBER_BG),
-            ("Recovery est.",   f"~{sc['rec']:.0f} yr", f"At {prof['ret_mid'] * 100:.0f}% p.a.", GREEN, GREEN_BG),
+            ("Before", fmt(total), "Current value", TEXT, BG),
+            ("Estimated loss", fmt(net_loss), f"-{pct_loss:.1f}%", RED, RED_BG),
+            ("Portfolio after", fmt(nt), "Post-crash estimate", AMBER, AMBER_BG),
+            ("Recovery est.", f"~{sc['rec']:.0f} yr", f"At {prof['ret_mid'] * 100:.0f}% p.a.", GREEN, GREEN_BG),
         ])
 
         sec("ASSET IMPACT", RED)
@@ -1223,58 +1105,46 @@ with tab5:
                 continue
             delta = bd.get(an, 0)
             shock = sc["shocks"].get(an, 0)
-            c2 = RED if delta < 0 else GREEN
-            ds = (
-                f"<span style='color:{RED};font-family:{FM};font-weight:600;'>{fmt(delta)}</span>"
-                if delta < 0 else
-                f"<span style='color:{GREEN};font-family:{FM};font-weight:600;'>+{fmt(delta)}</span>"
-            )
+            ds = (f"<span style='color:{RED};font-family:{FM};font-weight:600;'>{fmt(delta)}</span>"
+                  if delta < 0 else
+                  f"<span style='color:{GREEN};font-family:{FM};font-weight:600;'>+{fmt(delta)}</span>")
             imp_rows.append([an, fmt(v), f"{shock * 100:+.0f}%", fmt(v + delta), ds])
             bx.append(an.split("&")[0].strip()[:10])
             bv.append(delta)
-            bc.append(c2)
+            bc.append(RED if delta < 0 else GREEN)
         tbl(["Asset", "Before", "Shock", "After", "Change"], imp_rows)
 
         fig_b = go.Figure()
         fig_b.add_trace(go.Bar(x=bx, y=bv, marker_color=bc, marker_line_width=0,
                                hovertemplate="%{x}<br>%{y:,.0f}<extra></extra>"))
-        fig_b.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            margin=dict(t=4, b=4, l=4, r=4), height=200, showlegend=False,
-            xaxis=dict(showgrid=False, tickfont=dict(family="JetBrains Mono", size=8, color=MUTED)),
-            yaxis=dict(showgrid=True, gridcolor=BD,
-                       tickfont=dict(family="JetBrains Mono", size=8, color=MUTED),
-                       tickprefix=sym()),
-        )
+        fig_b.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            margin=dict(t=4, b=4, l=4, r=4), height=200, showlegend=False,
+                            xaxis=dict(showgrid=False, tickfont=dict(family="JetBrains Mono", size=8, color=MUTED)),
+                            yaxis=dict(showgrid=True, gridcolor=BD,
+                                       tickfont=dict(family="JetBrains Mono", size=8, color=MUTED), tickprefix=sym()))
         st.plotly_chart(fig_b, use_container_width=True)
 
         sec("RECOVERY TIMELINE", GREEN)
         yrs = list(range(16))
         fig_r = go.Figure()
-        fig_r.add_hline(y=total, line_dash="dash", line_color=BLUE, line_width=1.5,
+        fig_r.add_hline(y=total, line_dash="dash", line_color=PRIMARY, line_width=1.5,
                         annotation_text="Current value",
-                        annotation_font=dict(family="JetBrains Mono", size=9, color=BLUE))
+                        annotation_font=dict(family="JetBrains Mono", size=9, color=PRIMARY))
         rec_colors = [GREEN, AMBER, RED]
         for (sn, s_), rc in zip(STRESS.items(), rec_colors):
             sl   = sum(holdings.get(a, 0) * s_["shocks"].get(a, 0) for a in ASSET_NAMES)
             vals = [(total + sl) * (1 + prof["ret_mid"]) ** y for y in yrs]
-            fig_r.add_trace(go.Scatter(
-                x=yrs, y=vals, mode="lines",
-                name=s_["label"].split("  ")[0],
-                line=dict(color=rc, width=1.8),
-                hovertemplate="Yr %{x}  %{y:,.0f}<extra></extra>",
-            ))
-        fig_r.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-            margin=dict(t=8, b=8, l=8, r=8), height=240,
-            legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0, orientation="h", y=1.12,
-                        font=dict(family="JetBrains Mono", size=9, color=MUTED)),
-            xaxis=dict(title="Years post-crash", showgrid=False,
-                       tickfont=dict(family="JetBrains Mono", size=8, color=MUTED)),
-            yaxis=dict(showgrid=True, gridcolor=BD,
-                       tickfont=dict(family="JetBrains Mono", size=8, color=MUTED),
-                       tickprefix=sym()),
-        )
+            fig_r.add_trace(go.Scatter(x=yrs, y=vals, mode="lines", name=s_["label"].split("  ")[0],
+                                       line=dict(color=rc, width=1.8),
+                                       hovertemplate="Yr %{x}  %{y:,.0f}<extra></extra>"))
+        fig_r.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                            margin=dict(t=8, b=8, l=8, r=8), height=240,
+                            legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0, orientation="h", y=1.12,
+                                        font=dict(family="JetBrains Mono", size=9, color=MUTED)),
+                            xaxis=dict(title="Years post-crash", showgrid=False,
+                                       tickfont=dict(family="JetBrains Mono", size=8, color=MUTED)),
+                            yaxis=dict(showgrid=True, gridcolor=BD,
+                                       tickfont=dict(family="JetBrains Mono", size=8, color=MUTED), tickprefix=sym()))
         st.plotly_chart(fig_r, use_container_width=True)
 
         if pct_loss > prof["draw_mid"] * 100 * 1.3:
@@ -1298,7 +1168,7 @@ with tab6:
         pac   = PROFILE_CLR[pname]
         pbg   = PROFILE_BG[pname]
 
-        note("Monte Carlo simulation — 1,000 independent paths using your profile's historical return and volatility parameters. Outcome probabilities, not point predictions.", "info")
+        note("Monte Carlo simulation — 1,000 independent paths using your profile's historical return and volatility. Outcome probabilities, not point predictions.", "info")
 
         sec("INPUTS", PURPLE)
         g1, g2, g3 = st.columns(3, gap="large")
@@ -1307,8 +1177,7 @@ with tab6:
                                  value=int(st.session_state["goal_amount"]))
             st.session_state["goal_amount"] = ga
         with g2:
-            gy = st.slider("Time horizon (years)", 1, 40,
-                           int(st.session_state["goal_years"]), 1)
+            gy = st.slider("Time horizon (years)", 1, 40, int(st.session_state["goal_years"]), 1)
             st.session_state["goal_years"] = gy
         with g3:
             mc = st.number_input("Monthly contributions", min_value=0, step=250,
@@ -1316,7 +1185,6 @@ with tab6:
             st.session_state["monthly_contrib"] = mc
 
         start = float(total) if total > 0 else 0.0
-
         if not start and not mc:
             note("Enter your portfolio value (Portfolio tab) or a monthly contribution to run projections.", "info")
         else:
@@ -1324,72 +1192,58 @@ with tab6:
                 p10, p25, p50, p75, p90, ym, yp10, yp90 = run_mc(start, mc, gy, pname, 1000)
 
             if   p90 < ga: prob, pc = "< 10%",  RED
-            elif p75 < ga: prob, pc = "10–25%",  RED
+            elif p75 < ga: prob, pc = "10–25%", RED
             elif p50 < ga: prob, pc = "25–50%", AMBER
             elif p25 < ga: prob, pc = "50–75%", GREEN
             elif p10 < ga: prob, pc = "75–90%", GREEN
             else:          prob, pc = "> 90%",  GREEN
+            pcbg = RED_BG if pc == RED else (AMBER_BG if pc == AMBER else GREEN_BG)
 
             ti = start + mc * gy * 12
             sec("RESULTS", PURPLE)
             kpis([
-                ("Starting value",     fmt(start), "Current portfolio",        TEXT,  BG),
-                ("Total contributed",  fmt(ti),    f"{fmt(mc)}/mo x {gy}yr",   MUTED, BG),
-                ("Median outcome",     fmt(p50),   "50th percentile",          pac,   pbg),
-                ("Probability of goal",prob,       f"Reaching {fmt(ga)}",      pc,    RED_BG if pc == RED else (AMBER_BG if pc == AMBER else GREEN_BG)),
+                ("Starting value", fmt(start), "Current portfolio", TEXT, BG),
+                ("Total contributed", fmt(ti), f"{fmt(mc)}/mo x {gy}yr", MUTED, BG),
+                ("Median outcome", fmt(p50), "50th percentile", pac, pbg),
+                ("Probability of goal", prob, f"Reaching {fmt(ga)}", pc, pcbg),
             ])
 
             sec("PROJECTION CHART", PURPLE)
-            yrs = list(range(gy + 1))
+            yrsx = list(range(gy + 1))
             fig_mc = go.Figure()
-            fig_mc.add_trace(go.Scatter(
-                x=yrs + yrs[::-1],
-                y=[yp90[y] for y in yrs] + [yp10[y] for y in yrs][::-1],
-                fill="toself", fillcolor="rgba(59,111,235,0.08)",
-                line=dict(color="rgba(0,0,0,0)"),
-                name="10th–90th band", hoverinfo="skip",
-            ))
-            fig_mc.add_trace(go.Scatter(
-                x=yrs, y=[ym[y] for y in yrs],
-                mode="lines", name="Median",
-                line=dict(color=BLUE, width=2.5),
-                hovertemplate="Yr %{x}  %{y:,.0f}<extra></extra>",
-            ))
-            fig_mc.add_trace(go.Scatter(
-                x=yrs, y=[yp10[y] for y in yrs],
-                mode="lines", name="10th pct",
-                line=dict(color=RED, width=1.2, dash="dot"),
-                hovertemplate="Yr %{x}  %{y:,.0f}<extra></extra>",
-            ))
-            fig_mc.add_trace(go.Scatter(
-                x=yrs, y=[yp90[y] for y in yrs],
-                mode="lines", name="90th pct",
-                line=dict(color=GREEN, width=1.2, dash="dot"),
-                hovertemplate="Yr %{x}  %{y:,.0f}<extra></extra>",
-            ))
+            fig_mc.add_trace(go.Scatter(x=yrsx + yrsx[::-1],
+                                        y=[yp90[y] for y in yrsx] + [yp10[y] for y in yrsx][::-1],
+                                        fill="toself", fillcolor="rgba(30,142,84,0.10)",
+                                        line=dict(color="rgba(0,0,0,0)"), name="10th–90th band", hoverinfo="skip"))
+            fig_mc.add_trace(go.Scatter(x=yrsx, y=[ym[y] for y in yrsx], mode="lines", name="Median",
+                                        line=dict(color=PRIMARY, width=2.5),
+                                        hovertemplate="Yr %{x}  %{y:,.0f}<extra></extra>"))
+            fig_mc.add_trace(go.Scatter(x=yrsx, y=[yp10[y] for y in yrsx], mode="lines", name="10th pct",
+                                        line=dict(color=RED, width=1.2, dash="dot"),
+                                        hovertemplate="Yr %{x}  %{y:,.0f}<extra></extra>"))
+            fig_mc.add_trace(go.Scatter(x=yrsx, y=[yp90[y] for y in yrsx], mode="lines", name="90th pct",
+                                        line=dict(color=TEAL, width=1.2, dash="dot"),
+                                        hovertemplate="Yr %{x}  %{y:,.0f}<extra></extra>"))
             if ga > 0:
                 fig_mc.add_hline(y=ga, line_dash="dash", line_color=PURPLE, line_width=1.5,
                                  annotation_text=f"Goal {fmt(ga)}",
                                  annotation_font=dict(family="JetBrains Mono", size=9, color=PURPLE))
-            fig_mc.update_layout(
-                paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-                margin=dict(t=8, b=8, l=8, r=8), height=320,
-                legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0, orientation="h", y=1.1,
-                            font=dict(family="JetBrains Mono", size=9, color=MUTED)),
-                xaxis=dict(title="Years", showgrid=False,
-                           tickfont=dict(family="JetBrains Mono", size=8, color=MUTED)),
-                yaxis=dict(showgrid=True, gridcolor=BD,
-                           tickfont=dict(family="JetBrains Mono", size=8, color=MUTED),
-                           tickprefix=sym()),
-            )
+            fig_mc.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+                                 margin=dict(t=8, b=8, l=8, r=8), height=320,
+                                 legend=dict(bgcolor="rgba(0,0,0,0)", borderwidth=0, orientation="h", y=1.1,
+                                             font=dict(family="JetBrains Mono", size=9, color=MUTED)),
+                                 xaxis=dict(title="Years", showgrid=False,
+                                            tickfont=dict(family="JetBrains Mono", size=8, color=MUTED)),
+                                 yaxis=dict(showgrid=True, gridcolor=BD,
+                                            tickfont=dict(family="JetBrains Mono", size=8, color=MUTED), tickprefix=sym()))
             st.plotly_chart(fig_mc, use_container_width=True)
 
             sec(f"OUTCOME DISTRIBUTION — YEAR {gy}", PURPLE)
             tbl(["Percentile", "Value", "Interpretation"], [
-                ["90th (optimistic)",  fmt(p90), "Only 10% of simulations exceed this"],
-                ["75th",              fmt(p75), "Better than 3 in 4 paths"],
-                ["50th (median)",     fmt(p50), "Central estimate"],
-                ["25th",             fmt(p25), "Worse than 3 in 4 paths"],
+                ["90th (optimistic)", fmt(p90), "Only 10% of simulations exceed this"],
+                ["75th", fmt(p75), "Better than 3 in 4 paths"],
+                ["50th (median)", fmt(p50), "Central estimate"],
+                ["25th", fmt(p25), "Worse than 3 in 4 paths"],
                 ["10th (pessimistic)", fmt(p10), "Only 10% of paths fall below this"],
             ])
 
@@ -1400,13 +1254,10 @@ with tab6:
                 _, _, sp50, _, _, _, _, _ = run_mc(start, mc + ex, gy, pname, 500)
                 hit  = sp50 >= ga
                 clr2 = GREEN if hit else RED
-                sr.append([
-                    "Current" if ex == 0 else f"+{fmt(ex)}/mo",
-                    fmt(mc + ex) + "/mo",
-                    fmt(sp50),
-                    f"<span style='color:{clr2};font-family:{FM};font-size:0.8rem;font-weight:600;'>"
-                    f"{'Reaches' if hit else 'Misses'} goal</span>",
-                ])
+                sr.append(["Current" if ex == 0 else f"+{fmt(ex)}/mo",
+                           fmt(mc + ex) + "/mo", fmt(sp50),
+                           f"<span style='color:{clr2};font-family:{FM};font-size:0.8rem;font-weight:600;'>"
+                           f"{'Reaches' if hit else 'Misses'} goal</span>"])
             tbl(["Scenario", "Monthly", "Median Outcome", "Goal"], sr)
 
             if pc == GREEN:
@@ -1423,10 +1274,8 @@ with tab6:
 
 # ── FOOTER ────────────────────────────────────────────────────
 st.markdown(
-    f"<div style='border-top:1px solid {BD};margin-top:2rem;padding:12px 0 6px;"
-    f"font-family:{FM};font-size:0.58rem;letter-spacing:0.06em;"
-    f"text-transform:uppercase;color:{DIM};text-align:center;'>"
-    f"Meridian — Educational purposes only — Not personal financial advice — "
-    f"Consult a licensed financial adviser (AFSL)</div>",
+    f"<div style='border-top:1px solid {BD};margin-top:2rem;padding:12px 0 6px;font-family:{FM};"
+    f"font-size:0.58rem;letter-spacing:0.06em;text-transform:uppercase;color:{DIM};text-align:center;'>"
+    f"Meridian — Educational purposes only — Not personal financial advice — Consult a licensed financial adviser (AFSL)</div>",
     unsafe_allow_html=True,
 )
