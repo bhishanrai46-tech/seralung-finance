@@ -599,7 +599,6 @@ st.markdown(
     f"<div style='font-family:{FH};font-size:0.76rem;color:{MUTED};padding:0 0 6px;'>"
     f"<span style='background:{PRIMARY_BG};color:{PRIMARY_DK};font-weight:600;"
     f"padding:3px 9px;border-radius:5px;'>Educational only</span>"
-    f"&nbsp; Not personal financial advice — consult a licensed adviser before investing.</div>",
     unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
