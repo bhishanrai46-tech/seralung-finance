@@ -1,1242 +1,664 @@
 """
-Seralung Finance — Understand Risk. Invest with Confidence.
-============================================================
-Pages: ?page=budget | health | portfolio | simulator | actions
+Seralung Finance — goal-based financial wizard (Streamlit).
+Run:  streamlit run app.py
+Deps: streamlit, numpy, pandas
 
-Run:   streamlit run Seralungfinance.py
-Deps:  streamlit plotly numpy pandas
+WHAT CHANGED (per request):
+  • Financial Health is now GOAL-BASED. You set your Ultimate Goal first, then the
+    score measures how well-positioned you are to reach it (trajectory toward the
+    goal is 50% of the score). The old budget-ratio rule has been removed.
+  • "Where you stand": current progress, projected coverage, gap, required monthly
+    contribution and years-to-goal are all shown on the Financial Health step.
+
+CALCULATION DETAILS are documented in calculation_notes() (shown in-app under an
+expander on the Action Plan step) and in README.md.
 """
-
-import uuid
+import base64
 import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
-st.set_page_config(page_title="Seralung Finance", layout="wide",
-                   initial_sidebar_state="collapsed")
+st.set_page_config(page_title="Seralung Finance", layout="wide", initial_sidebar_state="collapsed")
 
-# Anti-flash injection (before anything else renders)
-st.markdown("<style>html,body{background-color:#EAF5EC!important;color-scheme:light!important}</style>",
+# ════════════════════════════════════════════════════════════════
+# FINANCE ENGINE  (verified exact against the reference figures)
+# ════════════════════════════════════════════════════════════════
+ASSETS   = ["Cash","Bonds","Equity ETFs","Stocks","Property","Crypto"]
+ASSET_CLR= ["#16794D","#7C3AED","#3DA968","#B7791F","#0E7C7B","#C53929"]
+R  = np.array([0.035,0.045,0.080,0.095,0.070,0.180])
+V  = np.array([0.010,0.050,0.150,0.240,0.140,0.650])
+RF, Z, PHI = 0.035, 1.645, 0.103138
+CORR = np.array([[1,.15,0,-.05,.05,0],[.15,1,.25,.10,.30,.05],[0,.25,1,.88,.60,.35],
+                 [-.05,.10,.88,1,.50,.40],[.05,.30,.60,.50,1,.25],[0,.05,.35,.40,.25,1]])
+COV = np.outer(V,V)*CORR
+
+TIER_W = {"Defensive":[40,40,12,0,8,0],"Conservative":[22,33,25,3,15,2],
+          "Balanced":[10,22,35,10,18,5],"Growth":[5,12,45,18,15,5],"Aggressive":[2,5,48,25,12,8]}
+TIERS  = list(TIER_W)
+TIER_CLR={"Defensive":"#0E7C7B","Conservative":"#16794D","Balanced":"#16794D","Growth":"#B7791F","Aggressive":"#C53929"}
+TIER_BG ={"Defensive":"#DFF2F1","Conservative":"#E7F5EC","Balanced":"#E7F5EC","Growth":"#FBF3E2","Aggressive":"#FBEAE7"}
+TIER_OPT={
+ "Defensive":["High-interest savings & term deposits","Government bond ETFs (e.g. VGB, IAF)","Cash management / money-market funds","Capital-guaranteed products"],
+ "Conservative":["Diversified bond ETFs (corporate + government)","Blue-chip dividend ETFs","Small allocation to broad index funds","Defensive listed property (A-REIT ETFs)"],
+ "Balanced":["Broad-market index ETFs (VAS, VGS, IVV)","Balanced multi-asset funds (~60/40)","Listed property / infrastructure ETFs","Investment-grade bond ETFs for ballast"],
+ "Growth":["Global & domestic equity ETFs (growth tilt)","International index funds (developed + emerging)","Sector / thematic ETFs as satellites","Small allocation to quality individual stocks"],
+ "Aggressive":["Growth & thematic equity ETFs","Emerging-market & small-cap ETFs","Selective individual growth stocks","Small, capped crypto allocation (under 10%)"]}
+
+CATS  = ["Housing","Utilities","Groceries","Transport","Insurance","Healthcare","Debt Repayment",
+         "Dining Out","Entertainment","Shopping","Subscriptions","Travel","Savings/Invest","Other"]
+CTYPE = {"Housing":"Need","Utilities":"Need","Groceries":"Need","Transport":"Need","Insurance":"Need",
+         "Healthcare":"Need","Debt Repayment":"Need","Dining Out":"Want","Entertainment":"Want",
+         "Shopping":"Want","Subscriptions":"Want","Travel":"Want","Savings/Invest":"Savings","Other":"Want"}
+DEFAULT_EXP = [["Rent / Mortgage","Housing",1800],["Electricity & Gas","Utilities",200],
+   ["Groceries","Groceries",650],["Car & Fuel","Transport",350],["Health Insurance","Insurance",180],
+   ["Loan Repayment","Debt Repayment",400],["Streaming & Apps","Subscriptions",55],["Dining Out","Dining Out",300]]
+
+QUESTIONS = [
+ ("When do you expect to need this money?",["Under 3 years","3–7 years","7–15 years","15+ years"]),
+ ("How stable is your income?",["Retired or fixed income","Variable or self-employed","Stable salary","Very secure"]),
+ ("If your portfolio fell 30% in three months, you would:",["Sell everything","Sell some","Hold and wait","Buy more at lower prices"]),
+ ("How much investing experience do you have?",["None","Basic — shares & funds","Three or more years active","Ten or more years, multi-asset"]),
+ ("Your primary investment goal:",["Protect capital","Modest growth with protection","Balanced growth","Maximum growth"]),
+ ("Do you expect significant withdrawals within five years?",["Yes — most of it","Yes — a meaningful portion","Possibly — small amounts","No — long-term"]),
+ ("Maximum annual loss you could absorb:",["Under 5%","5–15%","15–25%","25% or more"]),
+ ("This investment is what share of your net worth?",["Over 75%","50–75%","25–50%","Under 25%"]),
+ ("How do market swings make you feel?",["Very anxious","Uneasy","Mostly calm","Indifferent — it is normal"]),
+ ("Your investment knowledge level:",["Beginner","Some understanding","Confident","Advanced"])]
+TOL = [("Conservative",10,18,1),("Moderately Conservative",19,25,2),("Balanced",26,31,3),("Growth",32,36,4),("Aggressive",37,40,5)]
+
+def sf(x):
+    try:
+        v=float(x); return max(0.0,v) if np.isfinite(v) else 0.0
+    except (TypeError,ValueError): return 0.0
+
+def metrics(wpct):
+    w=np.array(wpct,float)/100.0
+    rp=float(w@R); sd=float(w@COV@w)**0.5
+    return {"rp":rp,"sd":sd,"sharpe":(rp-RF)/sd if sd>0 else 0.0,
+            "var95":max(0,Z*sd-rp),"cvar95":max(0,sd*(PHI/0.05)-rp),
+            "maxdd":min(0.95,2.4*sd),"div":float(w@V)/sd if sd>0 else 1.0}
+TIER_M={t:metrics(TIER_W[t]) for t in TIERS}
+
+def compute_budget(ss):
+    income=sf(ss["income_primary"])+sf(ss["income_secondary"]); savings=sf(ss["savings"])
+    total=needs=wants=debt=0.0; cat_sums={}
+    if ss["entry_mode"]=="total":
+        total=sf(ss["total_expenses"]); needs=total
+    else:
+        for _,row in ss["expenses_df"].iterrows():
+            amt=sf(row.get("Amount",0));
+            if amt<=0: continue
+            cat=row.get("Category","Other"); cat=cat if cat in CATS else "Other"
+            total+=amt; t=CTYPE.get(cat,"Want")
+            if t=="Need": needs+=amt
+            elif t=="Want": wants+=amt
+            if cat=="Debt Repayment": debt+=amt
+            cat_sums[cat]=cat_sums.get(cat,0)+amt
+    surplus=income-total; sr=surplus/income if income>0 else 0
+    essential=needs if needs>0 else total; runway=savings/essential if essential>0 else 0
+    dti=debt/income if income>0 else 0
+    return dict(income=income,savings=savings,total=total,needs=needs,wants=wants,debt=debt,
+                surplus=surplus,sr=sr,essential=essential,runway=runway,dti=dti,cat_sums=cat_sums)
+
+def capacity(b):
+    run=min(100,b["runway"]/6*100); sr=min(100,max(0,b["sr"])/0.25*100); dti=max(0,100-b["dti"]/0.50*100)
+    return round(.40*run+.40*sr+.20*dti)
+def cap_level(c):
+    return (5,"Strong") if c>=80 else (4,"Solid") if c>=60 else (3,"Moderate") if c>=40 else (2,"Limited") if c>=20 else (1,"Fragile")
+def tol_profile(ss):
+    s=sum(int(ss[f"quiz_q{i}"])+1 for i in range(1,11))
+    for n,lo,hi,lv in TOL:
+        if lo<=s<=hi: return n,lv,s
+    return "Balanced",3,s
+def rec_tier(cap_l,tol_l): return TIERS[max(1,min(5,min(cap_l,tol_l)))-1]
+
+# ---- Ultimate Goal time-value math (monthly compounding) ----
+def future_value(S0,C,r,years):
+    i=r/12; m=int(round(years*12))
+    if abs(i)<1e-12: return S0+C*m
+    g=(1+i)**m; return S0*g+C*((g-1)/i)
+def required_contribution(T,S0,r,years):
+    i=r/12; m=int(round(years*12))
+    if abs(i)<1e-12: return max(0,(T-S0)/m)
+    g=(1+i)**m; return max(0,(T-S0*g)*i/(g-1))
+def years_to_goal(T,S0,C,r):
+    i=r/12
+    if T<=S0: return 0.0
+    if abs(i)<1e-12: return ((T-S0)/C)/12 if C>0 else float("inf")
+    num,den=T+C/i,S0+C/i
+    if den<=0 or num/den<=0: return float("inf")
+    m=np.log(num/den)/np.log(1+i); return m/12 if m>0 else float("inf")
+
+def goal_target(ss):
+    return sf(ss["goal_income"])*12/0.04 if ss["goal_mode"]=="income" else sf(ss["goal_lump"])
+
+def goal_health(b, T, r, years):
+    """GOAL-BASED financial health (0-100). Trajectory toward the goal is the
+    dominant factor (50 pts); supported by buffer, savings discipline and debt."""
+    if b["income"]<=0 or T<=0: return 0,{}
+    Cm=max(0,b["surplus"]); FV=future_value(b["savings"],Cm,r,years); cov=FV/T
+    p_traj=min(1,max(0,cov))*50
+    p_run =min(1,b["runway"]/6)*20
+    p_sr  =min(1,max(0,b["sr"])/0.20)*15
+    p_debt=15 if b["dti"]<=0.20 else max(0,15-(b["dti"]-0.20)*60)
+    score=round(min(100,p_traj+p_run+p_sr+p_debt))
+    parts={"Goal trajectory":(round(p_traj),50),"Emergency runway":(round(p_run),20),
+           "Savings rate":(round(p_sr),15),"Debt load":(round(p_debt),15)}
+    extra=dict(fv=FV,cov=cov,req=required_contribution(T,b["savings"],r,years),
+               ytg=years_to_goal(T,b["savings"],Cm,r),now=b["savings"]/T if T>0 else 0,Cm=Cm)
+    return score,(parts,extra)
+
+def rating(s):
+    return ("Excellent","#16794D","#E7F5EC") if s>=80 else ("Good","#0E7C7B","#DFF2F1") if s>=65 \
+      else ("Fair","#B7791F","#FBF3E2") if s>=45 else ("At Risk","#C53929","#FBEAE7") if s>=25 else ("Critical","#C53929","#FBEAE7")
+
+# ════════════════════════════════════════════════════════════════
+# SVG CHARTS  (rendered as base64 <img> so Streamlit never strips them)
+# ════════════════════════════════════════════════════════════════
+def _img(svg, mw):
+    b64=base64.b64encode(svg.encode()).decode()
+    return f'<img src="data:image/svg+xml;base64,{b64}" style="display:block;margin:0 auto;width:100%;max-width:{mw}px"/>'
+def _polar(cx,cy,r,deg):
+    a=(deg-90)*np.pi/180; return cx+r*np.cos(a), cy+r*np.sin(a)
+def _arc(cx,cy,r,a0,a1):
+    x0,y0=_polar(cx,cy,r,a0); x1,y1=_polar(cx,cy,r,a1); large=0 if (a1-a0)<=180 else 1
+    return f"M {x0:.2f} {y0:.2f} A {r} {r} 0 {large} 1 {x1:.2f} {y1:.2f}"
+def gauge(score,color):
+    cx,cy,r,start,sweep=110,110,80,135,270
+    end=start+sweep*max(0,min(100,score))/100
+    svg=(f'<svg viewBox="0 0 220 200" xmlns="http://www.w3.org/2000/svg">'
+         f'<path d="{_arc(cx,cy,r,start,start+sweep)}" fill="none" stroke="#E6EEF0" stroke-width="16" stroke-linecap="round"/>'
+         f'<path d="{_arc(cx,cy,r,start,end)}" fill="none" stroke="{color}" stroke-width="16" stroke-linecap="round"/>'
+         f'<text x="{cx}" y="{cy-2}" text-anchor="middle" font-family="Plus Jakarta Sans,sans-serif" font-weight="800" font-size="40" fill="{color}">{round(score)}</text>'
+         f'<text x="{cx}" y="{cy+20}" text-anchor="middle" font-family="Plus Jakarta Sans,sans-serif" font-size="13" fill="#64748B">out of 100</text></svg>')
+    return _img(svg,240)
+def donut(segs,center):
+    cx,cy,r,sw=90,90,62,24; C=2*np.pi*r; off=0; circ=""
+    tot=sum(v for _,v,_ in segs) or 1
+    for _,v,clr in segs:
+        ln=v/tot*C
+        circ+=(f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="none" stroke="{clr}" stroke-width="{sw}" '
+               f'stroke-dasharray="{ln:.2f} {C-ln:.2f}" stroke-dashoffset="{-off:.2f}" transform="rotate(-90 {cx} {cy})"/>')
+        off+=ln
+    svg=(f'<svg viewBox="0 0 180 180" xmlns="http://www.w3.org/2000/svg">{circ}'
+         f'<text x="{cx}" y="{cy+5}" text-anchor="middle" font-family="Plus Jakarta Sans,sans-serif" font-weight="700" font-size="15" fill="#1E2A32">{center}</text></svg>')
+    return _img(svg,220)
+def legend(segs):
+    return '<div class="legend">'+''.join(f'<div class="li"><span class="sw" style="background:{c}"></span>{l}</div>' for l,_,c in segs)+'</div>'
+
+# ════════════════════════════════════════════════════════════════
+# CSS
+# ════════════════════════════════════════════════════════════════
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+html,body,.stApp,[data-testid="stAppViewContainer"]{background:#EEF1F5!important;font-family:'Plus Jakarta Sans',sans-serif;color:#1E2A32!important}
+.stApp p,.stApp label,.stApp li,[data-testid="stMarkdownContainer"]{color:#1E2A32}
+.block-container{padding:0 22px 5rem;max-width:1180px}
+#MainMenu,footer,header{visibility:hidden}.stDeployButton{display:none!important}
+[data-testid="stSidebarNav"]{display:none!important}
+[data-testid="stVerticalBlock"]{gap:.3rem!important}
+h1,h2,h3,h4{font-family:'Plus Jakarta Sans',sans-serif!important;margin:0!important;color:#1E2A32!important}
+.topbar{background:linear-gradient(100deg,#0B2545,#14365F);color:#fff;border-radius:0 0 0 0;margin:0 -22px;padding:14px 22px;display:flex;justify-content:space-between;align-items:center}
+.topbar h1{font-size:1.15rem;font-weight:800;color:#fff!important}.topbar p{font-size:.8rem;color:#B9C6D6;margin-top:1px}
+.pillc{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.22);color:#fff;font-size:.74rem;font-weight:600;padding:5px 12px;border-radius:20px;display:flex;gap:8px;align-items:center}
+.dotz{display:flex;gap:4px}.dotz i{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.28);display:inline-block}.dotz i.on{background:#F59E0B}
+.stepnav{background:#fff;margin:0 -22px;padding:16px 22px 14px;border-bottom:1px solid #E3E8EF;display:flex;justify-content:space-between}
+.snode{display:flex;flex-direction:column;align-items:center;gap:6px;flex:1;position:relative}
+.snode .circle{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:.85rem;background:#fff;border:2px solid #E3E8EF;color:#94A3B8;z-index:2}
+.snode .lbl{font-size:.74rem;font-weight:600;color:#94A3B8;text-align:center;line-height:1.15}
+.snode .line{position:absolute;top:17px;left:50%;width:100%;height:2px;background:#E3E8EF;z-index:1}.snode:last-child .line{display:none}
+.snode.done .circle{color:#fff}.snode.active .circle{background:#fff}
+.banner{margin:0 -22px 6px;padding:16px 22px;display:flex;gap:14px;align-items:center}
+.banner .bi{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:1.3rem;color:#fff;flex-shrink:0}
+.banner .pl{font-size:.66rem;font-weight:800;letter-spacing:.04em;padding:3px 10px;border-radius:20px;color:#fff;display:inline-block}
+.banner .cp{background:#16794D;color:#fff;font-size:.66rem;font-weight:800;padding:3px 10px;border-radius:20px;margin-left:6px}
+.banner h2{font-size:1.05rem;font-weight:800;margin-top:5px!important}.banner .sb{font-size:.82rem;color:#64748B}
+.sec{display:flex;align-items:center;gap:10px;margin:18px 0 10px}.sec span{font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;font-weight:700;color:#16794D;white-space:nowrap}.sec .ln{flex:1;height:1px;background:#E3E8EF}
+.note{border-left:3.5px solid #16794D;background:#E7F5EC;border-radius:0 10px 10px 0;padding:10px 14px;margin:7px 0;font-size:.88rem;line-height:1.55}
+.note.warn{border-color:#B7791F;background:#FBF3E2}.note.alert{border-color:#C53929;background:#FBEAE7}
+.metric{background:#fff;border:1px solid #E3E8EF;border-top:3px solid #16794D;border-radius:0 0 14px 14px;padding:14px 16px;box-shadow:0 1px 4px rgba(0,0,0,.04);height:100%}
+.metric .ml{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#64748B;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.metric .mv{font-size:1.5rem;font-weight:800;line-height:1.15;margin-top:6px;word-break:break-word}.metric .ms{font-size:.71rem;color:#64748B;margin-top:4px;line-height:1.4}
+.card{background:#fff;border:1px solid #E3E8EF;border-radius:16px;box-shadow:0 1px 6px rgba(15,40,70,.05)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;font-size:.76rem;margin-top:8px}.legend .li{display:flex;align-items:center;gap:5px}.legend .sw{width:9px;height:9px;border-radius:2px}
+.brk{margin-bottom:13px}.brk .l{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px}.brk .nm{font-size:.9rem;font-weight:500}.brk .sc{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:.86rem}
+.brk .bar{height:6px;background:rgba(0,0,0,.07);border-radius:3px;overflow:hidden}.brk .bar i{display:block;height:100%;border-radius:3px}
+.opt-item{background:#fff;border:1px solid #E3E8EF;border-left:3px solid #16794D;border-radius:0 10px 10px 0;padding:9px 14px;margin-bottom:5px;font-size:.88rem}
+.tierhead{border:1px solid #E3E8EF;border-left:4px solid #16794D;border-radius:0 14px 14px 0;padding:15px 18px;margin-bottom:10px;box-shadow:0 1px 4px rgba(0,0,0,.04)}.tierhead h3{font-size:1.5rem;font-weight:800}.tierhead .er{font-size:.82rem;color:#64748B;margin-top:3px}
+.cmp{width:100%;border-collapse:collapse;border:1px solid #E3E8EF;border-radius:12px;overflow:hidden}
+.cmp th{background:#16794D;color:#fff;text-align:left;font-size:.68rem;text-transform:uppercase;letter-spacing:.05em;font-weight:600;padding:8px 11px;white-space:nowrap}
+.cmp td{padding:9px 11px;border-bottom:1px solid #E3E8EF;font-family:'JetBrains Mono',monospace;font-size:.82rem}.cmp td.tn{font-family:'Plus Jakarta Sans',sans-serif;font-weight:700}
+.cmpnote{font-size:.7rem;color:#64748B;margin-top:6px;line-height:1.5}
+.scen{border:1px solid #E3E8EF;border-top:3px solid #16794D;border-radius:0 0 12px 12px;padding:13px 15px;background:#fff}.scen .sl{font-size:.66rem;font-weight:700;text-transform:uppercase;color:#64748B}.scen .sv{font-family:'JetBrains Mono',monospace;font-size:1.25rem;font-weight:700;margin-top:5px}.scen .sd{font-family:'JetBrains Mono',monospace;font-size:.78rem;margin-top:3px}
+.goalwrap{background:linear-gradient(120deg,#0E5C39,#16794D);border-radius:18px;padding:18px 20px;color:#fff;box-shadow:0 6px 22px rgba(14,92,57,.22)}
+.goalwrap .gt{font-size:.7rem;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:#BFE6CF}.goalwrap h3{font-size:1.25rem;font-weight:800;margin-top:3px;color:#fff!important}.goalwrap .gsub{font-size:.82rem;color:#CDEAD9;margin-top:3px}
+.ptrack{height:14px;border-radius:8px;background:rgba(255,255,255,.18);overflow:hidden;position:relative;margin-top:6px}.ptrack .pp{height:100%;background:rgba(255,255,255,.45);position:absolute;left:0;top:0;border-radius:8px}.ptrack .pn{height:100%;background:#9BE7BC;position:absolute;left:0;top:0;border-radius:8px}
+.plab{display:flex;justify-content:space-between;font-size:.74rem;color:#CDEAD9;margin-top:6px;font-family:'JetBrains Mono',monospace}
+.gstat{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);border-radius:12px;padding:11px 13px}.gstat .l{font-size:.62rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#BFE6CF}.gstat .v{font-family:'JetBrains Mono',monospace;font-size:1.1rem;font-weight:700;margin-top:3px}.gstat .s{font-size:.66rem;color:#CDEAD9;margin-top:2px}
+.readwrap{border:1px solid #E3E8EF;border-left:4px solid #16794D;border-radius:0 14px 14px 0;padding:16px 20px}.readwrap .ov{font-size:.65rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#64748B}.readwrap .rt{font-size:1.65rem;font-weight:800}.readwrap .rd{font-size:.85rem;color:#64748B;margin-top:5px;line-height:1.5}
+.action{background:#fff;border:1px solid #E3E8EF;border-radius:0 14px 14px 0;padding:13px 16px;margin-bottom:8px;box-shadow:0 1px 4px rgba(0,0,0,.03)}.action .ah{display:flex;align-items:center;gap:10px;margin-bottom:5px;flex-wrap:wrap}.action .num{color:#fff;font-size:.78rem;font-weight:800;width:24px;height:24px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center}.action .tag{font-size:.6rem;font-weight:700;padding:2px 9px;border-radius:20px;text-transform:uppercase;letter-spacing:.05em}.action .at{font-size:.97rem;font-weight:700}.action .ad{font-size:.87rem;color:#64748B;line-height:1.6;padding-left:34px}
+/* Streamlit widget theming */
+.stNumberInput input,.stTextInput input,.stTextArea textarea{background:#fff!important;border:1.5px solid #E3E8EF!important;border-radius:10px!important;color:#1E2A32!important;font-family:'JetBrains Mono',monospace!important}
+.stNumberInput label,.stTextInput label,.stSelectbox label,.stSlider label,.stRadio label{font-size:.7rem!important;font-weight:700!important;text-transform:uppercase!important;letter-spacing:.03em!important;color:#64748B!important}
+.stSelectbox div[data-baseweb="select"]>div{background:#fff!important;border:1.5px solid #E3E8EF!important;border-radius:10px!important}
+.stButton>button{background:#16794D;color:#fff;border:none;border-radius:50px;font-weight:600;padding:9px 18px;box-shadow:0 2px 8px rgba(22,121,77,.2);width:100%}
+.stButton>button:hover{background:#0E5C39;color:#fff}
+.stButton>button[kind="secondary"],button[data-testid="stBaseButton-secondary"]{background:#fff!important;color:#1E2A32!important;border:1.5px solid #E3E8EF!important;box-shadow:none!important}
+.stButton>button[kind="secondary"]:hover,button[data-testid="stBaseButton-secondary"]:hover{border-color:#16794D!important;color:#16794D!important}
+.stDownloadButton>button{background:#13243B;color:#fff;border:none;border-radius:11px;font-weight:700;padding:12px;width:100%}
+.stRadio [role="radiogroup"]{gap:2px}
+div[data-testid="stRadio"] [role="radiogroup"]>label{padding:7px 11px;border-radius:9px;margin-bottom:2px}
+div[data-testid="stRadio"] [role="radiogroup"]>label:hover{background:#E7F5EC}
+[data-testid="stDataFrame"],[data-testid="stDataEditor"]{border-radius:12px;overflow:hidden;border:1px solid #D8E6DD}
+</style>
+"""
+
+STEP_META=[("budget","Budget","📁","#F59E0B","#FBEFD8","Budget","Know your financial health & risk before investing"),
+           ("health","Fin. Health","💎","#06B6D4","#D6F1F7","Financial Health","Set your goal, then score your fitness to reach it"),
+           ("portfolio","Portfolio","◔","#7C3AED","#ECE6FB","Portfolio Diversification","Explore investment tiers"),
+           ("forecast","Forecast","📈","#F97316","#FCE7D6","Forecast","Forecast your portfolio growth"),
+           ("actions","Actions","✅","#10B981","#D7F5E6","Action Plan","Get your personalised plan")]
+
+fmt=lambda n:"$"+format(int(round(n)),",")
+
+# ════════════════════════════════════════════════════════════════
+# SESSION STATE
+# ════════════════════════════════════════════════════════════════
+def init_state():
+    d={"step":1,"max_step":1,"income_primary":6000,"income_secondary":0,"savings":15000,
+       "entry_mode":"individual","total_expenses":0,"selected_tier":"Defensive",
+       "goal_mode":"income","goal_income":5000,"goal_lump":1000000,"goal_years":25,
+       "fb_rating":0,"fb_name":"","fb_text":"","fb_sent":False,
+       **{f"quiz_q{i}":0 for i in range(1,11)},
+       **{f"w{i}":TIER_W["Balanced"][i] for i in range(6)}}
+    for k,v in d.items(): st.session_state.setdefault(k,v)
+    if "expenses_df" not in st.session_state:
+        st.session_state["expenses_df"]=pd.DataFrame(DEFAULT_EXP,columns=["Expense","Category","Amount"])
+init_state()
+ss=st.session_state
+
+def goto(step):
+    ss["step"]=step; ss["max_step"]=max(ss["max_step"],step)
+
+# ════════════════════════════════════════════════════════════════
+# SHELL (header / step nav / banner)
+# ════════════════════════════════════════════════════════════════
+st.markdown(CSS,unsafe_allow_html=True)
+step=ss["step"]; meta=STEP_META[step-1]; accent,abg=meta[3],meta[4]
+
+dots="".join(f'<i class="{"on" if i<step else ""}"></i>' for i in range(5))
+st.markdown(f'<div class="topbar"><div><h1>Seralung Finance</h1><p>Understand Risk. Invest with Confidence.</p></div>'
+            f'<div class="pillc"><span>{step}/5 steps complete</span><span class="dotz">{dots}</span></div></div>',unsafe_allow_html=True)
+
+nav=""
+for i,m in enumerate(STEP_META):
+    n=i+1; a=m[3]
+    if n<step: cls,inner="done",f'<div class="circle" style="background:{a};border-color:{a};color:#fff">✓</div>'
+    elif n==step: cls,inner="active",f'<div class="circle" style="border-color:{a};color:{a};box-shadow:0 0 0 4px {a}33">{n}</div>'
+    elif n<=ss["max_step"]: cls,inner="",f'<div class="circle">{n}</div>'
+    else: cls,inner="",'<div class="circle">🔒</div>'
+    lncol=a if n<step else "#E3E8EF"
+    lbl=m[1].replace(" ","<br>",1) if m[1]=="Fin. Health" else m[1]
+    nav+=f'<div class="snode {cls}"><div class="line" style="background:{lncol}"></div>{inner}<div class="lbl" style="{"color:"+a if n==step else ""}">{lbl}</div></div>'
+st.markdown(f'<div class="stepnav">{nav}</div>',unsafe_allow_html=True)
+
+cp='<span class="cp">✓ COMPLETE</span>' if step<ss["max_step"] else ""
+st.markdown(f'<div class="banner" style="background:{abg}"><div class="bi" style="background:{accent}">{meta[2]}</div>'
+            f'<div><span class="pl" style="background:{accent}">STEP {step} OF 5</span>{cp}<h2>{meta[5]}</h2><div class="sb">{meta[6]}</div></div></div>',
             unsafe_allow_html=True)
 
-PLOTLY_CFG = {"displayModeBar":False,"scrollZoom":False,"doubleClick":False,
-              "showAxisDragHandles":False,"showAxisRangeEntryBoxes":False}
-
-def detect_mobile():
-    try:
-        ua = (st.context.headers.get("User-Agent","") or "")
-        return any(k in ua for k in ["Mobile","Android","iPhone","iPad","iPod","Windows Phone"])
-    except Exception:
-        return False
-
-IS_MOBILE = detect_mobile()
-
-def cols(n, gap="small"):
-    if IS_MOBILE: return [st.container() for _ in range(n)]
-    return st.columns(n, gap=gap)
-
-# ── Palette ─────────────────────────────────────────────────────
-BG, CARD, BD         = "#EAF5EC", "#FFFFFF", "#CBE2D2"
-TEXT, MUTED, DIM     = "#10241A", "#54695E", "#95AC9E"
-PRIMARY, PRIMARY_BG, PRIMARY_DK = "#16794D", "#E0F2E7", "#0E5C39"
-LGREEN, LGREEN_BG    = "#3DA968", "#EAF6EE"
-GREEN,  GREEN_BG     = PRIMARY, PRIMARY_BG
-AMBER,  AMBER_BG     = "#B7791F", "#FBF3E2"
-RED,    RED_BG       = "#C53929", "#FBEAE7"
-PURPLE, PURPLE_BG    = "#7C3AED", "#F1ECFC"
-TEAL,   TEAL_BG      = "#0E7C7B", "#DFF2F1"
-SLATE,  SLATE_BG     = "#6B7280", "#F2F4F7"
-
-FH = "'Plus Jakarta Sans', system-ui, sans-serif"
-FM = "'JetBrains Mono', 'Fira Code', monospace"
-
-HOVER_STYLE = dict(bgcolor=CARD, bordercolor=BD,
-                   font=dict(family="Plus Jakarta Sans, sans-serif", size=12, color=TEXT))
-PLOTLY_BASE = dict(font=dict(family="Plus Jakarta Sans, sans-serif", color=TEXT),
-                   paper_bgcolor=CARD, plot_bgcolor="rgba(0,0,0,0)",
-                   hoverlabel=HOVER_STYLE, dragmode=False)
-
-# ── Budget model ─────────────────────────────────────────────────
-EXPENSE_CATEGORIES = ["Housing","Utilities","Groceries","Transport","Insurance","Healthcare",
-    "Debt Repayment","Dining Out","Entertainment","Shopping","Subscriptions","Travel",
-    "Savings/Invest","Other"]
-CATEGORY_TYPE = {
-    "Housing":"Need","Utilities":"Need","Groceries":"Need","Transport":"Need",
-    "Insurance":"Need","Healthcare":"Need","Debt Repayment":"Need",
-    "Dining Out":"Want","Entertainment":"Want","Shopping":"Want",
-    "Subscriptions":"Want","Travel":"Want","Savings/Invest":"Savings","Other":"Want"}
-DEFAULT_BILLS = [
-    {"expense":"Rent / Mortgage",   "category":"Housing",        "amount":1800},
-    {"expense":"Electricity & Gas", "category":"Utilities",      "amount":200},
-    {"expense":"Groceries",         "category":"Groceries",      "amount":650},
-    {"expense":"Car & Fuel",        "category":"Transport",      "amount":350},
-    {"expense":"Health Insurance",  "category":"Insurance",      "amount":180},
-    {"expense":"Loan Repayment",    "category":"Debt Repayment", "amount":400},
-    {"expense":"Streaming & Apps",  "category":"Subscriptions",  "amount":55},
-    {"expense":"Dining Out",        "category":"Dining Out",     "amount":300}]
-
-# ── Investment engine (MPT) ──────────────────────────────────────
-MPT_ASSETS  = ["Cash","Bonds","Equity ETFs","Stocks","Property","Crypto"]
-EXP_RETURNS = np.array([0.035,0.045,0.080,0.095,0.070,0.180])
-VOLS        = np.array([0.010,0.050,0.150,0.240,0.140,0.650])
-RISK_FREE   = 0.035
-CORR = np.array([[ 1.00, 0.15, 0.00,-0.05, 0.05, 0.00],
-                 [ 0.15, 1.00, 0.25, 0.10, 0.30, 0.05],
-                 [ 0.00, 0.25, 1.00, 0.88, 0.60, 0.35],
-                 [-0.05, 0.10, 0.88, 1.00, 0.50, 0.40],
-                 [ 0.05, 0.30, 0.60, 0.50, 1.00, 0.25],
-                 [ 0.00, 0.05, 0.35, 0.40, 0.25, 1.00]])
-COV = np.outer(VOLS, VOLS) * CORR
-
-TIERS = ["Defensive","Conservative","Balanced","Growth","Aggressive"]
-TIER_WEIGHTS = {"Defensive":[40,40,12,0,8,0],"Conservative":[22,33,25,3,15,2],
-                "Balanced":[10,22,35,10,18,5],"Growth":[5,12,45,18,15,5],
-                "Aggressive":[2,5,48,25,12,8]}
-TIER_CLR = {"Defensive":TEAL,"Conservative":GREEN,"Balanced":PRIMARY,"Growth":AMBER,"Aggressive":RED}
-TIER_BG  = {"Defensive":TEAL_BG,"Conservative":GREEN_BG,"Balanced":PRIMARY_BG,
-            "Growth":AMBER_BG,"Aggressive":RED_BG}
-TIER_OPTIONS = {
-    "Defensive":    ["High-interest savings & term deposits",
-                     "Government bond ETFs (e.g. VGB, IAF)",
-                     "Cash management / money-market funds",
-                     "Capital-guaranteed products"],
-    "Conservative": ["Diversified bond ETFs (corporate + government)",
-                     "Blue-chip dividend ETFs",
-                     "Small allocation to broad index funds",
-                     "Defensive listed property (A-REIT ETFs)"],
-    "Balanced":     ["Broad-market index ETFs (VAS, VGS, IVV)",
-                     "Balanced multi-asset funds (~60/40)",
-                     "Listed property / infrastructure ETFs",
-                     "Investment-grade bond ETFs for ballast"],
-    "Growth":       ["Global & domestic equity ETFs (growth tilt)",
-                     "International index funds (developed + emerging)",
-                     "Sector / thematic ETFs as satellites",
-                     "Small allocation to quality individual stocks"],
-    "Aggressive":   ["Growth & thematic equity ETFs",
-                     "Emerging-market & small-cap ETFs",
-                     "Selective individual growth stocks",
-                     "Small, capped crypto allocation (under 10%)"]}
-
-# ── Risk questionnaire ───────────────────────────────────────────
-QUESTIONS = [
-    ("When do you expect to need this money?",
-     ["Under 3 years","3–7 years","7–15 years","15+ years"]),
-    ("How stable is your income?",
-     ["Retired or fixed income","Variable or self-employed","Stable salary","Very secure"]),
-    ("If your portfolio fell 30% in three months, you would:",
-     ["Sell everything","Sell some","Hold and wait","Buy more at lower prices"]),
-    ("How much investing experience do you have?",
-     ["None","Basic — shares & funds","Three or more years active","Ten or more years, multi-asset"]),
-    ("Your primary investment goal:",
-     ["Protect capital","Modest growth with protection","Balanced growth","Maximum growth"]),
-    ("Do you expect significant withdrawals within five years?",
-     ["Yes — most of it","Yes — a meaningful portion","Possibly — small amounts","No — long-term"]),
-    ("Maximum annual loss you could absorb:",
-     ["Under 5%","5–15%","15–25%","25% or more"]),
-    ("This investment is what share of your net worth?",
-     ["Over 75%","50–75%","25–50%","Under 25%"]),
-    ("How do market swings make you feel?",
-     ["Very anxious","Uneasy","Mostly calm","Indifferent — it is normal"]),
-    ("Your investment knowledge level:",
-     ["Beginner","Some understanding","Confident","Advanced"])]
-TOL_PROFILES = {
-    "Conservative":            {"range":(10,18),"level":1,"clr":GREEN,   "bg":GREEN_BG},
-    "Moderately Conservative": {"range":(19,25),"level":2,"clr":TEAL,    "bg":TEAL_BG},
-    "Balanced":                {"range":(26,31),"level":3,"clr":PRIMARY, "bg":PRIMARY_BG},
-    "Growth":                  {"range":(32,36),"level":4,"clr":AMBER,   "bg":AMBER_BG},
-    "Aggressive":              {"range":(37,40),"level":5,"clr":RED,     "bg":RED_BG}}
-
-# ── Session state ────────────────────────────────────────────────
-_DEF = {"income_primary":6000,"income_secondary":0,"current_savings":15000,
-        "user_age":30, **{f"q{i}":0 for i in range(1,11)}}
-for k,v in _DEF.items():
-    if k not in st.session_state: st.session_state[k] = v
-
-if "bills_list" not in st.session_state:
-    st.session_state["bills_list"] = []
-    for i,row in enumerate(DEFAULT_BILLS):
-        bid = f"b{i:02d}"
-        st.session_state["bills_list"].append({"id":bid,**row})
-        st.session_state[f"bill_{bid}_name"] = row["expense"]
-        st.session_state[f"bill_{bid}_cat"]  = row["category"]
-        st.session_state[f"bill_{bid}_amt"]  = int(row["amount"])
-
-# ── Calculations ─────────────────────────────────────────────────
-def portfolio_metrics(weights_pct):
-    w  = np.array(weights_pct,dtype=float)/100.0
-    rp = float(w @ EXP_RETURNS)
-    sd = float(w @ COV @ w)**0.5
-    sharpe = (rp-RISK_FREE)/sd if sd>0 else 0.0
-    z,phi  = 1.645, 0.103138
-    var95  = max(0.0, z*sd-rp);  cvar95 = max(0.0, sd*(phi/0.05)-rp)
-    div_r  = float(w @ VOLS)/sd if sd>0 else 1.0
-    return {"ret":rp,"vol":sd,"sharpe":sharpe,"var95":var95,
-            "cvar95":cvar95,"div_ratio":div_r,"max_dd":min(0.95,2.4*sd)}
-
-TIER_METRICS = {t: portfolio_metrics(TIER_WEIGHTS[t]) for t in TIERS}
-
-def _safe_float(x, default=0.0):
-    try:
-        if x is None: return default
-        if isinstance(x,float) and (np.isnan(x) or np.isinf(x)): return default
-        return float(x)
-    except (TypeError,ValueError): return default
-
-def compute_budget(income, bills_df, savings):
-    income = max(0.0,_safe_float(income)); savings = max(0.0,_safe_float(savings))
-    if isinstance(bills_df,list): bills_df = pd.DataFrame(bills_df)
-    if not isinstance(bills_df,pd.DataFrame):
-        bills_df = pd.DataFrame(columns=["Expense","Category","Amount"])
-    df = bills_df.copy()
-    for col in ("Expense","Category","Amount"):
-        if col not in df.columns: df[col] = np.nan
-    df = df.dropna(how="all")
-    df["Expense"]  = df["Expense"].fillna("").astype(str)
-    df["Category"] = df["Category"].fillna("Other").astype(str).replace("","Other")
-    df.loc[~df["Category"].isin(EXPENSE_CATEGORIES),"Category"] = "Other"
-    df["_amt"] = pd.to_numeric(df["Amount"],errors="coerce").fillna(0.0).clip(lower=0.0)
-    df = df[df["_amt"]>0].reset_index(drop=True)
-    df["_type"] = df["Category"].map(CATEGORY_TYPE).fillna("Want")
-    total_exp = float(df["_amt"].sum())
-    needs  = float(df.loc[df["_type"]=="Need",    "_amt"].sum())
-    wants  = float(df.loc[df["_type"]=="Want",    "_amt"].sum())
-    invest = float(df.loc[df["_type"]=="Savings", "_amt"].sum())
-    debt   = float(df.loc[df["Category"]=="Debt Repayment","_amt"].sum())
-    surplus = income - total_exp; sr = surplus/income if income>0 else 0.0
-    essential = needs if needs>0 else total_exp
-    runway = savings/essential if essential>0 else 0.0
-    dti    = debt/income if income>0 else 0.0
-    cat_sums = df.groupby("Category")["_amt"].sum().sort_values(ascending=False).to_dict()
-    return {"income":income,"expenses":total_exp,"needs":needs,"wants":wants,
-            "invest":invest,"debt":debt,"surplus":surplus,"savings_rate":sr,
-            "runway":runway,"essential":essential,"dti":dti,"savings":savings,
-            "cat_sums":cat_sums,"bill_count":int(len(df))}
-
-def financial_health_score(b):
-    inc = b["income"]
-    if inc<=0: return 0,{}
-    sr,run = b["savings_rate"],b["runway"]
-    nr,wr,dti = b["needs"]/inc, b["wants"]/inc, b["dti"]
-    p_sr=30 if sr>=0.20 else max(0,sr)/0.20*30; p_run=min(25,run/6*25)
-    p_nee=20 if nr<=0.50 else max(0,20-(nr-0.50)*80)
-    p_wan=15 if wr<=0.30 else max(0,15-(wr-0.30)*60)
-    p_debt=10 if dti<=0.20 else max(0,10-(dti-0.20)*40)
-    return round(min(100,p_sr+p_run+p_nee+p_wan+p_debt)), {
-        "Savings rate":(round(p_sr),30),"Emergency runway":(round(p_run),25),
-        "Needs control":(round(p_nee),20),"Wants control":(round(p_wan),15),
-        "Debt load":(round(p_debt),10)}
-
-def health_rating(s):
-    if s>=80: return "Excellent",GREEN,  GREEN_BG
-    if s>=65: return "Good",     TEAL,   TEAL_BG
-    if s>=45: return "Fair",     AMBER,  AMBER_BG
-    if s>=25: return "At Risk",  RED,    RED_BG
-    return          "Critical",  RED,    RED_BG
-
-def risk_capacity(b):
-    run=min(100,b["runway"]/6*100); sr=min(100,max(0,b["savings_rate"])/0.25*100)
-    dti=max(0,100-b["dti"]/0.50*100)
-    return round(0.40*run+0.40*sr+0.20*dti)
-
-def capacity_level(cap):
-    if cap>=80: return 5,"Strong"
-    if cap>=60: return 4,"Solid"
-    if cap>=40: return 3,"Moderate"
-    if cap>=20: return 2,"Limited"
-    return           1,"Fragile"
-
-def quiz_total():
-    return sum(int(st.session_state.get(f"q{i}",0))+1 for i in range(1,11))
-
-def tolerance_profile():
-    s = quiz_total()
-    for name,d in TOL_PROFILES.items():
-        lo,hi = d["range"]
-        if lo<=s<=hi: return name,d,s
-    return "Balanced",TOL_PROFILES["Balanced"],s
-
-def recommended_tier(cap_lvl, tol_lvl):
-    idx = max(1,min(5,min(cap_lvl,tol_lvl)))
-    return TIERS[idx-1], idx
-
-def run_simulation(initial, monthly_contrib, annual_return, annual_vol, years, n_sim=400):
-    mr=annual_return/12; mv=annual_vol/(12**0.5)
-    portfolio = np.full(n_sim, max(0.0,float(initial)))
-    snapshots = [portfolio.copy()]
-    for m in range(years*12):
-        shocks = np.random.normal(mr,mv,n_sim)
-        portfolio = np.maximum(0.0, portfolio*(1+shocks)) + max(0.0,float(monthly_contrib))
-        if (m+1)%12==0: snapshots.append(portfolio.copy())
-    return np.array(snapshots)  # (years+1, n_sim)
+# helpers
+def sec(label): st.markdown(f'<div class="sec"><span>{label}</span><div class="ln"></div></div>',unsafe_allow_html=True)
+def note(t,k="info"): st.markdown(f'<div class="note {k}">{t}</div>',unsafe_allow_html=True)
+def mcard(l,v,s,clr="#16794D",bg="#fff"):
+    return f'<div class="metric" style="border-top-color:{clr};background:{bg}"><div class="ml">{l}</div><div class="mv" style="color:{clr}">{v}</div><div class="ms">{s}</div></div>'
 
 # ════════════════════════════════════════════════════════════════
-# CSS — full design system matching screenshots
-# ════════════════════════════════════════════════════════════════
-HERO_PAD = "1.1rem 1.1rem 1.0rem" if IS_MOBILE else "1.5rem 2rem 1.3rem"
-TITLE_SZ = "1.35rem" if IS_MOBILE else "1.85rem"
-SIDE_PAD = "0.7rem"  if IS_MOBILE else "1.6rem"
-
-st.markdown(f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
-
-html,body,.stApp,[data-testid="stAppViewContainer"],[data-testid="stMain"] {{
-    background:{BG} !important; font-family:{FH}; color:{TEXT} !important;
-    color-scheme:light !important;
-}}
-.stApp,.stApp p,.stApp label,.stApp li,
-[data-testid="stMarkdownContainer"],[data-testid="stWidgetLabel"] {{ color:{TEXT}; }}
-.block-container {{ padding:0 {SIDE_PAD} 3rem; max-width:1160px; }}
-#MainMenu,footer,header {{ visibility:hidden; }}
-.stDeployButton {{ display:none !important; }}
-* {{ box-sizing:border-box; }}
-h1,h2,h3,h4 {{ font-family:{FH} !important; font-weight:700 !important;
-    color:{TEXT} !important; margin:0 !important; }}
-
-[data-testid="stVerticalBlock"] {{ gap:0.32rem !important; }}
-[data-testid="stVerticalBlockBorderWrapper"] {{ border-radius:14px !important;
-    border-color:{BD} !important; }}
-
-/* Plotly charts — white card */
-[data-testid="stPlotlyChart"] {{
-    background:{CARD} !important; border-radius:16px !important;
-    box-shadow:0 1px 6px rgba(14,92,57,0.07) !important;
-    overflow:hidden !important; border:1px solid {BD} !important;
-}}
-
-/* Inputs */
-div[data-testid="stNumberInput"] label,
-div[data-testid="stSelectbox"]   label,
-div[data-testid="stTextInput"]   label {{
-    font-family:{FH} !important; font-size:0.73rem !important; text-transform:none !important;
-    color:{MUTED} !important; font-weight:500 !important; letter-spacing:0.01em;
-}}
-.stNumberInput input,.stTextInput input {{
-    background:{CARD} !important; border:1.5px solid {BD} !important; border-radius:10px !important;
-    color:{TEXT} !important; font-family:{FM} !important; font-size:0.91rem !important; padding:8px 12px !important;
-}}
-.stNumberInput input:focus,.stTextInput input:focus {{
-    border-color:{PRIMARY} !important; box-shadow:0 0 0 3px rgba(22,121,77,0.11) !important;
-    outline:none !important;
-}}
-.stNumberInput button {{ background:{CARD} !important; border-color:{BD} !important; }}
-
-/* Slider */
-[data-testid="stSlider"] label {{ font-family:{FH} !important; font-size:0.73rem !important;
-    color:{MUTED} !important; font-weight:500 !important; }}
-
-/* Radio */
-div[data-testid="stRadio"] *,[data-testid="stRadio"] label * {{ color:{TEXT} !important; }}
-div[data-testid="stRadio"] [data-testid="stMarkdownContainer"] p {{
-    color:{TEXT} !important; font-family:{FH} !important; font-size:0.88rem !important;
-    margin:0 !important; line-height:1.4 !important;
-}}
-div[data-testid="stRadio"] [role="radiogroup"] > label {{
-    padding:6px 10px; border-radius:8px; margin-bottom:2px; transition:background .12s; cursor:pointer;
-}}
-div[data-testid="stRadio"] [role="radiogroup"] > label:hover {{ background:{PRIMARY_BG}; }}
-div[data-testid="stRadio"] > label {{ font-family:{FH} !important; font-size:0.73rem !important;
-    color:{MUTED} !important; font-weight:500 !important; }}
-
-/* ALL primary buttons */
-.stButton > button {{
-    background:{PRIMARY} !important; color:#fff !important; border:none !important;
-    border-radius:50px !important; font-family:{FH} !important;
-    font-size:0.88rem !important; font-weight:600 !important; padding:9px 18px !important;
-    box-shadow:0 2px 8px rgba(22,121,77,0.20) !important; transition:all .14s !important; width:100%;
-}}
-.stButton > button:hover {{ background:{PRIMARY_DK} !important; transform:translateY(-1px) !important; }}
-
-/* Secondary buttons (tier pills, delete, inactive nav) */
-button[data-testid="stBaseButton-secondary"],
-[data-testid="stBaseButton-secondary"] button {{
-    background:{CARD} !important; color:{TEXT} !important;
-    border:1.5px solid {BD} !important; box-shadow:none !important;
-    border-radius:50px !important;
-}}
-button[data-testid="stBaseButton-secondary"]:hover,
-[data-testid="stBaseButton-secondary"] button:hover {{
-    background:{PRIMARY_BG} !important; color:{PRIMARY} !important;
-    border-color:{PRIMARY} !important;
-}}
-
-/* Nav row container */
-.nav-row {{ display:flex; gap:{'5px' if IS_MOBILE else '6px'};
-    margin:0 0 1.2rem; padding:5px;
-    background:{CARD}; border:1px solid {BD}; border-radius:14px;
-    box-shadow:0 2px 8px rgba(14,92,57,0.05); overflow-x:auto; }}
-.nav-row .stButton > button {{
-    border-radius:10px !important;
-    font-size:{'0.87rem' if IS_MOBILE else '0.97rem'} !important;
-    padding:{'10px 11px' if IS_MOBILE else '11px 16px'} !important;
-    box-shadow:none !important; white-space:nowrap;
-}}
-
-/* Download button */
-.stDownloadButton > button {{
-    background:{PRIMARY} !important; color:#fff !important; border:none !important;
-    border-radius:50px !important; font-family:{FH} !important;
-    font-size:0.93rem !important; font-weight:700 !important;
-    padding:11px 22px !important; box-shadow:0 3px 12px rgba(22,121,77,0.24) !important;
-    width:100%;
-}}
-.stDownloadButton > button:hover {{ background:{PRIMARY_DK} !important; transform:translateY(-1px) !important; }}
-
-/* Selectbox */
-.stSelectbox > div > div {{ background:{CARD} !important; border:1.5px solid {BD} !important;
-    border-radius:10px !important; font-family:{FH} !important; }}
-[role="listbox"] *,[role="option"] {{ background:{CARD} !important; color:{TEXT} !important; }}
-
-/* Expander */
-[data-testid="stExpander"] summary {{
-    background:{CARD} !important; border-radius:10px !important;
-    font-family:{FH} !important; font-weight:600 !important; color:{PRIMARY} !important;
-    border:1px solid {BD} !important;
-}}
-
-hr {{ border:none; border-top:1px solid {BD}; margin:0.6rem 0; }}
-
-@media (max-width:640px) {{
-    .block-container {{ padding-left:0.5rem !important; padding-right:0.5rem !important; }}
-}}
-</style>
-""", unsafe_allow_html=True)
-
-# ════════════════════════════════════════════════════════════════
-# UI HELPERS
-# ════════════════════════════════════════════════════════════════
-def note(text, kind="info"):
-    cfg = {"info":(PRIMARY_BG,PRIMARY),"good":(GREEN_BG,GREEN),
-           "warn":(AMBER_BG,AMBER),"alert":(RED_BG,RED)}
-    bg,ac = cfg.get(kind,cfg["info"])
-    st.markdown(
-        f"<div style='background:{bg};border-left:3.5px solid {ac};border-radius:0 10px 10px 0;"
-        f"padding:10px 14px;margin:5px 0;font-family:{FH};font-size:0.88rem;color:{TEXT};"
-        f"line-height:1.55;'>{text}</div>", unsafe_allow_html=True)
-
-def section(label, color=PRIMARY):
-    st.markdown(
-        f"<div style='display:flex;align-items:center;gap:10px;margin:18px 0 10px;'>"
-        f"<span style='font-family:{FH};font-size:0.72rem;letter-spacing:0.07em;"
-        f"text-transform:uppercase;color:{color};white-space:nowrap;font-weight:700;'>{label}</span>"
-        f"<div style='flex:1;height:1px;background:{BD};'></div></div>",
-        unsafe_allow_html=True)
-
-def metric_card(label, value, sub="", accent=PRIMARY, bg=CARD):
-    """Screenshot-matched metric card: white bg, colored top border, clean hierarchy."""
-    st.markdown(
-        f"<div style='background:{bg};border:1px solid {BD};border-top:3px solid {accent};"
-        f"border-radius:0 0 14px 14px;padding:14px 16px;min-width:0;height:100%;"
-        f"box-shadow:0 1px 4px rgba(0,0,0,0.04);'>"
-        f"<div style='font-family:{FH};font-size:0.68rem;font-weight:700;text-transform:uppercase;"
-        f"letter-spacing:0.06em;color:{MUTED};margin-bottom:6px;overflow:hidden;"
-        f"text-overflow:ellipsis;white-space:nowrap;'>{label}</div>"
-        f"<div style='font-family:{FH};font-size:1.55rem;color:{accent};font-weight:800;"
-        f"line-height:1.15;word-break:break-word;'>{value}</div>"
-        f"<div style='font-family:{FH};font-size:0.72rem;color:{MUTED};margin-top:4px;"
-        f"line-height:1.4;'>{sub}</div></div>",
-        unsafe_allow_html=True)
-
-def circular_gauge(score, color):
-    """Gauge matching screenshots: large number + 'out of 100' subtitle."""
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number", value=score,
-        number={"font":{"size":54,"family":"Plus Jakarta Sans","color":color}},
-        gauge={"axis":{"range":[0,100],"tickwidth":1,"tickcolor":DIM,
-                       "tickfont":{"size":8,"family":"JetBrains Mono","color":DIM}},
-               "bar":{"color":color,"thickness":0.30},
-               "bgcolor":"rgba(0,0,0,0)","borderwidth":0,
-               "steps":[{"range":[0,25],"color":RED_BG},{"range":[25,45],"color":AMBER_BG},
-                        {"range":[45,65],"color":"#FFFBEA"},{"range":[65,80],"color":LGREEN_BG},
-                        {"range":[80,100],"color":GREEN_BG}],
-               "threshold":{"line":{"color":color,"width":5},"thickness":0.85,"value":score}}))
-    fig.add_annotation(x=0.5, y=0.16, text="out of 100", showarrow=False,
-                       font=dict(size=13, family="Plus Jakarta Sans", color=MUTED),
-                       xanchor="center")
-    fig.update_layout(height=250, margin=dict(t=20,b=12,l=24,r=24),
-                      paper_bgcolor=CARD, plot_bgcolor="rgba(0,0,0,0)",
-                      font=dict(family="Plus Jakarta Sans", color=TEXT),
-                      hoverlabel=HOVER_STYLE, dragmode=False)
-    return fig
-
-def donut(labels, values, colors, center=""):
-    fig = go.Figure(go.Pie(
-        labels=labels, values=values, hole=0.60,
-        marker=dict(colors=colors, line=dict(color=CARD, width=2)),
-        textinfo="none",
-        hovertemplate="<b>%{label}</b><br>%{percent}<extra></extra>",
-        showlegend=True))
-    ann = [dict(text=center, x=0.5, y=0.5,
-                font=dict(size=14,family="Plus Jakarta Sans",color=TEXT,weight=700),
-                showarrow=False)] if center else []
-    fig.update_layout(
-        height=280, margin=dict(t=8,b=8,l=8,r=8),
-        showlegend=True,
-        legend=dict(orientation="h", yanchor="bottom", y=-0.18,
-                    xanchor="center", x=0.5, font=dict(size=10,family="Plus Jakarta Sans",color=TEXT),
-                    bgcolor="rgba(0,0,0,0)", itemsizing="constant"),
-        annotations=ann,
-        paper_bgcolor=CARD, plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Plus Jakarta Sans",color=TEXT), hoverlabel=HOVER_STYLE, dragmode=False)
-    return fig
-
-def bar_5030(needs_pct, wants_pct, save_pct):
-    fig = go.Figure()
-    cats = ["Needs","Wants","Savings"]
-    fig.add_trace(go.Bar(name="Your %", x=cats, y=[needs_pct,wants_pct,save_pct],
-                         marker_color=PRIMARY, marker_line_width=0,
-                         hovertemplate="%{x}: %{y:.0f}%<extra></extra>"))
-    fig.add_trace(go.Bar(name="50/30/20 ideal", x=cats, y=[50,30,20],
-                         marker_color=DIM, marker_line_width=0,
-                         hovertemplate="%{x} ideal: %{y}%<extra></extra>"))
-    fig.update_layout(
-        barmode="group", height=220, margin=dict(t=8,b=8,l=8,r=8),
-        legend=dict(bgcolor="rgba(0,0,0,0)",orientation="h",y=1.12,
-                    font=dict(family="JetBrains Mono",size=9,color=MUTED)),
-        xaxis=dict(showgrid=False,fixedrange=True,
-                   tickfont=dict(family="Plus Jakarta Sans",size=11,color=TEXT)),
-        yaxis=dict(showgrid=True,gridcolor=BD,ticksuffix="%",fixedrange=True,
-                   tickfont=dict(family="JetBrains Mono",size=8,color=MUTED)),
-        bargap=0.3, bargroupgap=0.08, paper_bgcolor=CARD, plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Plus Jakarta Sans",color=TEXT), hoverlabel=HOVER_STYLE, dragmode=False)
-    return fig
-
-def simulation_chart(base_data, wi_data, years, retire_in, target=None):
-    x = list(range(years+1))
-    fig = go.Figure()
-
-    def add_band(data, clr, name, dash="solid"):
-        p10=np.percentile(data,10,axis=1).tolist()
-        p90=np.percentile(data,90,axis=1).tolist()
-        p50=np.percentile(data,50,axis=1).tolist()
-        r,g,b = int(clr[1:3],16),int(clr[3:5],16),int(clr[5:7],16)
-        fig.add_trace(go.Scatter(x=x,y=p90,mode="lines",line=dict(color="rgba(0,0,0,0)"),
-            showlegend=False,hoverinfo="skip"))
-        fig.add_trace(go.Scatter(x=x,y=p10,mode="lines",fill="tonexty",
-            line=dict(color="rgba(0,0,0,0)"),fillcolor=f"rgba({r},{g},{b},0.10)",
-            showlegend=False,hoverinfo="skip"))
-        fig.add_trace(go.Scatter(x=x,y=p50,mode="lines",
-            line=dict(color=clr,width=2.5,dash=dash),name=name,
-            hovertemplate=f"Year %{{x}}<br>{name}: $%{{y:,.0f}}<extra></extra>"))
-
-    add_band(base_data, PRIMARY, "Current path")
-    if wi_data is not None:
-        add_band(wi_data, AMBER, "What-If path", dash="dash")
-
-    if 0 < retire_in <= years:
-        p90_max = np.percentile(
-            wi_data if wi_data is not None else base_data, 90, axis=1).max()
-        fig.add_vline(x=retire_in, line=dict(color=TEAL,width=2,dash="dot"))
-        fig.add_annotation(x=retire_in,y=p90_max*1.05,text="Retirement",showarrow=False,
-                           bgcolor=TEAL_BG,bordercolor=TEAL,borderpad=4,
-                           font=dict(family="Plus Jakarta Sans",size=10,color=TEAL))
-    if target and target>0:
-        fig.add_hline(y=target, line=dict(color=RED,width=1.5,dash="dot"))
-        fig.add_annotation(x=years*0.01,y=target,text=f"Target ${target/1e6:.1f}M",
-                           showarrow=False,xanchor="left",bgcolor=RED_BG,bordercolor=RED,
-                           borderpad=3,font=dict(family="Plus Jakarta Sans",size=10,color=RED))
-    fig.update_layout(
-        height=400, margin=dict(t=30,b=55,l=70,r=20),
-        legend=dict(orientation="h",y=-0.20,font=dict(size=11,family="Plus Jakarta Sans",color=TEXT)),
-        xaxis=dict(title="Years from now",fixedrange=True,
-                   tickfont=dict(family="JetBrains Mono",size=9,color=MUTED)),
-        yaxis=dict(title="Portfolio value",fixedrange=True,tickprefix="$",tickformat=",.0f",
-                   tickfont=dict(family="JetBrains Mono",size=9,color=MUTED),
-                   gridcolor=BD,showgrid=True),
-        paper_bgcolor=CARD, plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Plus Jakarta Sans",color=TEXT), hoverlabel=HOVER_STYLE, dragmode=False)
-    return fig
-
-# ════════════════════════════════════════════════════════════════
-# HEADER
-# ════════════════════════════════════════════════════════════════
-logo_html = (f"<div style='width:{'40px' if IS_MOBILE else '46px'};height:{'40px' if IS_MOBILE else '46px'};"
-             f"border-radius:12px;background:rgba(255,255,255,0.18);border:1px solid rgba(255,255,255,0.4);"
-             f"display:flex;align-items:center;justify-content:center;font-family:{FH};"
-             f"font-size:{'1.25rem' if IS_MOBILE else '1.5rem'};font-weight:800;color:#fff;'>S</div>")
-st.markdown(
-    f"<div style='background:{PRIMARY};border-radius:0 0 20px 20px;padding:{HERO_PAD};"
-    f"margin:0 -{SIDE_PAD} 1.1rem;box-shadow:0 4px 18px rgba(14,92,57,0.18);'>"
-    f"<div style='display:flex;align-items:center;gap:12px;'>{logo_html}"
-    f"<div><div style='font-family:{FH};font-size:{TITLE_SZ};font-weight:800;color:#fff;"
-    f"letter-spacing:-0.025em;line-height:1;'>Seralung Finance</div>"
-    f"<div style='font-family:{FH};font-size:{'0.76rem' if IS_MOBILE else '0.88rem'};"
-    f"color:rgba(255,255,255,0.88);margin-top:3px;font-weight:500;'>"
-    f"Understand Risk. Invest with Confidence.</div></div></div></div>",
-    unsafe_allow_html=True)
-st.markdown(
-    f"<div style='font-family:{FH};font-size:0.75rem;color:{MUTED};padding:0 0 5px;'>"
-    f"<span style='background:{PRIMARY_BG};color:{PRIMARY_DK};font-weight:600;"
-    f"padding:3px 9px;border-radius:5px;'>Educational only</span>"
-    f"&nbsp; Not personal financial advice — consult a licensed adviser before investing.</div>",
-    unsafe_allow_html=True)
-
-# ════════════════════════════════════════════════════════════════
-# NAVIGATION — button-based (WebSocket, zero-blink)
-# ════════════════════════════════════════════════════════════════
-PAGES = [("budget","Budget","Budget"),("health","Health","Financial Health"),
-         ("portfolio","Portfolio","Investment Portfolio"),
-         ("simulator","Simulator","What-If Simulator"),("actions","Plan","Action Plan")]
-VALID_KEYS = {p[0] for p in PAGES}
-raw = st.query_params.get("page","budget")
-current_page = raw if raw in VALID_KEYS else "budget"
-
-st.markdown('<div class="nav-row">', unsafe_allow_html=True)
-nav_cols = st.columns(len(PAGES))
-for i,(key,short,long) in enumerate(PAGES):
-    with nav_cols[i]:
-        label = short if IS_MOBILE else long
-        if st.button(label, key=f"nav_{key}",
-                     type="primary" if key==current_page else "secondary"):
-            st.query_params["page"] = key
-            st.rerun()
-st.markdown('</div>', unsafe_allow_html=True)
-
-# ════════════════════════════════════════════════════════════════
-# SHARED HELPERS
-# ════════════════════════════════════════════════════════════════
-def _del_bill(bid):
-    st.session_state["bills_list"] = [b for b in st.session_state["bills_list"] if b["id"]!=bid]
-    for s in ("_name","_cat","_amt"): st.session_state.pop(f"bill_{bid}{s}",None)
-
-def render_bill_card(bill):
-    bid = bill["id"]
-    if IS_MOBILE:
-        st.text_input("Name", key=f"bill_{bid}_name", label_visibility="collapsed",
-                      placeholder="Expense name")
-        ra,rb = st.columns([2,1])
-        with ra: st.selectbox("Cat", EXPENSE_CATEGORIES, key=f"bill_{bid}_cat",
-                               label_visibility="collapsed")
-        with rb: st.number_input("$", min_value=0, step=10, key=f"bill_{bid}_amt",
-                                  label_visibility="collapsed")
-        st.button("Remove", key=f"bill_{bid}_del", type="secondary",
-                  on_click=_del_bill, args=(bid,))
-    else:
-        c1,c2,c3,c4 = st.columns([4,3,2,1], gap="small")
-        with c1: st.text_input("Name", key=f"bill_{bid}_name", label_visibility="collapsed",
-                                placeholder="Expense name")
-        with c2: st.selectbox("Cat", EXPENSE_CATEGORIES, key=f"bill_{bid}_cat",
-                               label_visibility="collapsed")
-        with c3: st.number_input("$", min_value=0, step=10, key=f"bill_{bid}_amt",
-                                  label_visibility="collapsed")
-        with c4: st.button("✕", key=f"bill_{bid}_del", type="secondary",
-                            on_click=_del_bill, args=(bid,), help="Remove bill")
-    st.markdown(f"<div style='height:1px;background:{BD};margin:1px 0;'></div>",
-                unsafe_allow_html=True)
-
-def add_bill_form():
-    with st.expander("Add a new bill"):
-        with st.form("add_bill_form", clear_on_submit=True):
-            nn = st.text_input("Expense name", placeholder="e.g. Gym membership")
-            nc = st.selectbox("Category", EXPENSE_CATEGORIES)
-            na = st.number_input("Amount ($/month)", min_value=0, step=10, value=0)
-            if st.form_submit_button("Add bill", use_container_width=True):
-                if not nn.strip(): st.warning("Enter a name.")
-                elif na<=0:        st.warning("Amount must be > 0.")
-                else:
-                    nid = f"b{uuid.uuid4().hex[:8]}"
-                    st.session_state["bills_list"].append(
-                        {"id":nid,"expense":nn.strip(),"category":nc,"amount":int(na)})
-                    st.session_state[f"bill_{nid}_name"]=nn.strip()
-                    st.session_state[f"bill_{nid}_cat"]=nc
-                    st.session_state[f"bill_{nid}_amt"]=int(na)
-                    st.rerun()
-
-def bills_to_df():
-    rows = [{"Expense":st.session_state.get(f"bill_{b['id']}_name",b["expense"]),
-             "Category":st.session_state.get(f"bill_{b['id']}_cat",b["category"]),
-             "Amount":st.session_state.get(f"bill_{b['id']}_amt",b["amount"])}
-            for b in st.session_state["bills_list"]]
-    return pd.DataFrame(rows) if rows else pd.DataFrame(columns=["Expense","Category","Amount"])
-
-def tier_selector(session_key, default, rec_name=None):
-    """5 visible pill buttons — highlighted with ★ Suggested if matched."""
-    if session_key not in st.session_state or st.session_state[session_key] not in TIERS:
-        st.session_state[session_key] = default
-    tcols = st.columns(5)
-    for i,tier in enumerate(TIERS):
-        with tcols[i]:
-            is_sel = (st.session_state[session_key] == tier)
-            is_rec = (tier == rec_name) if rec_name else False
-            if is_sel and is_rec:  lbl = f"{tier}  ★ Suggested"
-            elif is_sel:           lbl = tier
-            else:                  lbl = tier
-            if st.button(lbl, key=f"{session_key}_btn_{tier}",
-                         type="primary" if is_sel else "secondary"):
-                st.session_state[session_key] = tier
-                st.rerun()
-    return st.session_state[session_key]
-
-def build_summary_text(b, fh, rating, cap_word, tname, rec_name, recs):
-    lines = ["SERALUNG FINANCE — PERSONAL FINANCIAL SUMMARY","="*50,"",
-             "Educational only. Not personal financial advice.","",
-             "FINANCIAL HEALTH","-"*50,
-             f"  Score:            {fh}/100",f"  Rating:           {rating}","",
-             "MONTHLY CASH FLOW","-"*50,
-             f"  Income:           ${b['income']:,.0f}",f"  Expenses:         ${b['expenses']:,.0f}",
-             f"  Surplus:          ${b['surplus']:,.0f}",f"  Savings rate:     {b['savings_rate']*100:.1f}%","",
-             "EMERGENCY FUND","-"*50,
-             f"  Cash savings:     ${b['savings']:,.0f}",f"  Essentials/mo:    ${b['essential']:,.0f}",
-             f"  Runway:           {b['runway']:.1f} months","","RISK PROFILE","-"*50,
-             f"  Risk tolerance:   {tname}",f"  Risk capacity:    {cap_word}",
-             f"  Suggested tier:   {rec_name}","","PRIORITISED ACTIONS","-"*50]
-    tag = {"alert":"[DO FIRST] ","warn":"[IMPORTANT] ","info":"[CONSIDER] ","good":"[ON TRACK] "}
-    for i,(kind,title,text) in enumerate(recs,1):
-        lines.append(f"  {i}. {tag.get(kind,'')}{title}")
-        words,current,pad = text.split(),"","     "
-        for w in words:
-            if len(current)+len(w)+1>68: lines.append(pad+current); current=w
-            else: current=(current+" "+w).strip()
-        if current: lines.append(pad+current)
-        lines.append("")
-    lines += ["","Generated by Seralung Finance."]
-    return "\n".join(lines)
-
-# ════════════════════════════════════════════════════════════════
-# PAGE: BUDGET
+# STEP 1 — BUDGET  (budget-ratio rule removed)
 # ════════════════════════════════════════════════════════════════
 def page_budget():
-    note("Enter your income and expenses. Each bill is editable — every metric updates live.", "info")
-    section("INCOME & SAVINGS")
-    i1,i2,i3 = cols(3,"medium")
-    with i1: st.number_input("Monthly primary income ($)", min_value=0, step=250, key="income_primary")
-    with i2: st.number_input("Secondary income ($, optional)", min_value=0, step=100, key="income_secondary")
-    with i3: st.number_input("Current cash savings ($)", min_value=0, step=1000, key="current_savings")
-
-    income  = int(st.session_state["income_primary"]) + int(st.session_state["income_secondary"])
-    savings = int(st.session_state["current_savings"])
-
-    section("YOUR BILLS & EXPENSES")
-    st.caption(f"{len(st.session_state['bills_list'])} bill(s)  ·  edit inline  ·  ✕ to remove")
-    for bill in list(st.session_state["bills_list"]): render_bill_card(bill)
-    add_bill_form()
-
-    bills_df = bills_to_df()
-    b = compute_budget(income, bills_df, savings)
-    st.session_state["budget"] = b
-
-    if income<=0:
-        note("Enter your monthly income above to see your budget analysis.", "warn"); return
-
-    section("BUDGET SUMMARY")
-    c1,c2,c3,c4 = cols(4,"small")
-    with c1: metric_card("Total Income",   f"${b['income']:,.0f}",    "Per month",      TEXT,  CARD)
-    with c2: metric_card("Total Expenses", f"${b['expenses']:,.0f}",  f"{b['expenses']/b['income']*100:.0f}% of income", AMBER, AMBER_BG)
-    with c3:
-        sc  = GREEN if b["surplus"]>0 else RED; sbg = GREEN_BG if b["surplus"]>0 else RED_BG
-        val = f"${b['surplus']:,.0f}" if b["surplus"]>=0 else f"-${abs(b['surplus']):,.0f}"
-        metric_card("Monthly Surplus", val, "Income − expenses", sc, sbg)
-    with c4:
-        sr = b["savings_rate"]
-        src  = GREEN if sr>=0.20 else (AMBER if sr>=0.10 else RED)
-        srbg = GREEN_BG if sr>=0.20 else (AMBER_BG if sr>=0.10 else RED_BG)
-        metric_card("Savings Rate", f"{sr*100:.1f}%", "Surplus / income", src, srbg)
-
-    section("50 / 30 / 20 RULE")
-    nr=b["needs"]/b["income"]*100; wr=b["wants"]/b["income"]*100
-    sv=max(0,b["surplus"])/b["income"]*100
-    cA,cB = cols(2,"large")
-    with cA: st.plotly_chart(bar_5030(nr,wr,sv), width="stretch", config=PLOTLY_CFG)
-    with cB:
-        st.markdown("<div style='padding-top:6px;'></div>", unsafe_allow_html=True)
-        for lbl,val,ideal,hint in [
-            ("Needs",nr,50,"housing, food, transport, insurance, debt"),
-            ("Wants",wr,30,"dining, entertainment, shopping, travel"),
-            ("Savings",sv,20,"everything left over")]:
-            ok  = (val<=ideal+2) if lbl!="Savings" else (val>=ideal-2)
-            clr = GREEN if ok else AMBER
-            st.markdown(
-                f"<div style='background:{CARD};border:1px solid {BD};border-radius:10px;"
-                f"padding:10px 13px;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,0.03);'>"
-                f"<div style='display:flex;justify-content:space-between;align-items:center;'>"
-                f"<span style='font-family:{FH};font-weight:700;color:{TEXT};font-size:0.9rem;'>{lbl}</span>"
-                f"<span style='font-family:{FM};font-weight:700;color:{clr};font-size:0.9rem;'>"
-                f"{val:.0f}%<span style='color:{MUTED};font-weight:400;font-size:0.8rem;'> / {ideal}%</span>"
-                f"</span></div>"
-                f"<div style='font-family:{FH};font-size:0.71rem;color:{MUTED};margin-top:2px;'>{hint}</div></div>",
-                unsafe_allow_html=True)
-
-    section("WHERE YOUR MONEY GOES")
-    cd,ce = cols(2,"large")
-    with cd:
-        cats = {k:v for k,v in b["cat_sums"].items() if v>0}
-        if cats:
-            palette = [PRIMARY,TEAL,AMBER,PURPLE,RED,LGREEN,SLATE,
-                       "#0E7C7B","#B7791F","#7C3AED","#3DA968","#C53929","#6B7280","#16794D"]
-            st.plotly_chart(
-                donut(list(cats.keys()),list(cats.values()),palette[:len(cats)],f"${b['expenses']:,.0f}"),
-                width="stretch", config=PLOTLY_CFG)
-    with ce:
-        st.markdown("<div style='padding-top:6px;'></div>", unsafe_allow_html=True)
-        rc  = GREEN if b["runway"]>=6 else (AMBER if b["runway"]>=3 else RED)
-        rbg = GREEN_BG if b["runway"]>=6 else (AMBER_BG if b["runway"]>=3 else RED_BG)
-        metric_card("Emergency Fund Runway", f"{b['runway']:.1f} months",
-                    f"${b['savings']:,.0f} savings ÷ ${b['essential']:,.0f}/mo essentials", rc, rbg)
-        st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
-        if b["runway"]<3:   note("Below 3 months — build this before investing.", "alert")
-        elif b["runway"]<6: note("Aim for 6 months of essentials before investing.", "warn")
-        else:               note("Healthy buffer — solid foundation to invest from.", "good")
+    note("Enter your income and expenses below — every metric recalculates live as you type.")
+    sec("Income &amp; Savings")
+    c1,c2,c3=st.columns(3)
+    c1.number_input("Monthly after-tax income ($)",min_value=0,step=250,key="income_primary")
+    c2.number_input("Secondary income (optional)",min_value=0,step=100,key="income_secondary")
+    c3.number_input("Current cash savings ($)",min_value=0,step=1000,key="savings")
+    sec("Your bills &amp; expenses")
+    t1,t2=st.columns([1,4])
+    mode=t1.radio("Entry mode",["Enter Individually","Enter Total at Once"],
+                  index=0 if ss["entry_mode"]=="individual" else 1,label_visibility="collapsed")
+    ss["entry_mode"]="individual" if mode=="Enter Individually" else "total"
+    if ss["entry_mode"]=="total":
+        st.number_input("Total monthly expenses ($)",min_value=0,step=100,key="total_expenses")
+    else:
+        st.caption("Edit any cell · use the + below the table to add a row · select a row and press ⌫ to delete")
+        ss["expenses_df"]=st.data_editor(ss["expenses_df"],num_rows="dynamic",use_container_width=True,key="exp_editor",
+            column_config={"Expense":st.column_config.TextColumn("Expense",width="large"),
+                "Category":st.column_config.SelectboxColumn("Category",options=CATS,width="medium"),
+                "Amount":st.column_config.NumberColumn("Amount ($/mo)",min_value=0,step=10,format="%d")})
+    b=compute_budget(ss); ss["budget"]=b
+    if b["income"]<=0: note("Enter your monthly income above to see your budget analysis.","warn"); return
+    sec("Budget Summary")
+    sc="#16794D" if b["surplus"]>0 else "#C53929"; sbg="#E7F5EC" if b["surplus"]>0 else "#FBEAE7"
+    srC="#16794D" if b["sr"]>=.2 else("#B7791F" if b["sr"]>=.1 else "#C53929"); srBg="#E7F5EC" if b["sr"]>=.2 else("#FBF3E2" if b["sr"]>=.1 else "#FBEAE7")
+    g=st.columns(4)
+    g[0].markdown(mcard("Total Income",fmt(b["income"]),"Per month","#1E2A32"),unsafe_allow_html=True)
+    g[1].markdown(mcard("Total Expenses",fmt(b["total"]),f"{b['total']/b['income']*100:.0f}% of income","#B7791F","#FBF3E2"),unsafe_allow_html=True)
+    g[2].markdown(mcard("Monthly Surplus",(fmt(b["surplus"]) if b["surplus"]>=0 else "-"+fmt(-b["surplus"])),"Income − expenses",sc,sbg),unsafe_allow_html=True)
+    g[3].markdown(mcard("Savings Rate",f"{b['sr']*100:.1f}%","Surplus / income",srC,srBg),unsafe_allow_html=True)
+    if ss["entry_mode"]=="individual" and b["cat_sums"]:
+        sec("Where Your Money Goes")
+        d1,d2=st.columns(2)
+        pal=ASSET_CLR+["#0E7C7B","#B7791F","#7C3AED","#3DA968","#C53929","#6B7280","#16794D","#0E7C7B"]
+        segs=[(k,v,pal[i]) for i,(k,v) in enumerate(sorted(b["cat_sums"].items(),key=lambda x:-x[1]))]
+        d1.markdown(f'<div class="card" style="padding:16px">{donut(segs,fmt(b["total"]))}{legend(segs)}</div>',unsafe_allow_html=True)
+        rc="#16794D" if b["runway"]>=6 else("#B7791F" if b["runway"]>=3 else "#C53929"); rcb="#E7F5EC" if b["runway"]>=6 else("#FBF3E2" if b["runway"]>=3 else "#FBEAE7")
+        d2.markdown(mcard("Emergency Fund Runway",f"{b['runway']:.1f} months",f"{fmt(b['savings'])} savings ÷ {fmt(b['essential'])}/mo essentials",rc,rcb),unsafe_allow_html=True)
+        if b["runway"]<3: d2.markdown('<div class="note alert">Your emergency fund is below 3 months. This is the most important fix before investing.</div>',unsafe_allow_html=True)
+        elif b["runway"]<6: d2.markdown('<div class="note warn">Aim for 6 months of essentials before investing.</div>',unsafe_allow_html=True)
+        else: d2.markdown('<div class="note">Healthy buffer — solid foundation to invest from.</div>',unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
-# PAGE: FINANCIAL HEALTH
+# STEP 2 — FINANCIAL HEALTH  (goal-based)
 # ════════════════════════════════════════════════════════════════
 def page_health():
-    # Age input always shown (works without budget data)
-    section("YOUR AGE")
-    age_col, _ = st.columns([1,2])
-    with age_col:
-        st.number_input("Your current age", min_value=18, max_value=90, step=1, key="user_age",
-                        help="Used in risk analysis and the What-If Simulator")
-    age = int(st.session_state["user_age"])
+    b=ss.get("budget") or compute_budget(ss)
+    # ---- ULTIMATE GOAL (set FIRST) ----
+    st.markdown('<div class="goalwrap"><div class="gt">Ultimate Goal</div>'
+                '<h3>Set your destination — health is measured against it</h3>'
+                '<div class="gsub">Your financial health below scores how well-positioned you are to reach this goal.</div></div>',unsafe_allow_html=True)
+    gm=st.radio("Goal type",["Target passive income","Target lump sum"],
+                index=0 if ss["goal_mode"]=="income" else 1,horizontal=True,label_visibility="collapsed")
+    ss["goal_mode"]="income" if gm=="Target passive income" else "lumpsum"
+    gc1,gc2=st.columns(2)
+    if ss["goal_mode"]=="income":
+        gc1.number_input("Desired passive income ($/month)",min_value=0,step=250,key="goal_income")
+    else:
+        gc1.number_input("Target lump sum ($)",min_value=0,step=10000,key="goal_lump")
+    gc2.number_input("Years until you want it",min_value=1,max_value=60,step=1,key="goal_years")
 
-    b = st.session_state.get("budget",{})
-    if not b or b.get("income",0)<=0:
-        note("Complete the Budget page first — health score comes from your income and expenses.", "info")
-        return
+    if b["income"]<=0:
+        note("Complete the Budget step first — your score is built from your income, savings and this goal.","warn"); return
 
-    fh, parts = financial_health_score(b)
-    rating, hclr, hbg = health_rating(fh)
+    T=goal_target(ss); cap=capacity(b); capL,capW=cap_level(cap); tname,tolL,tscore=tol_profile(ss)
+    rec=rec_tier(capL,tolL); r_goal=TIER_M[rec]["rp"]
+    score,(parts,ex)=goal_health(b,T,r_goal,sf(ss["goal_years"]) or 1)
+    rt,clr,bg=rating(score)
 
-    section("FINANCIAL HEALTH SCORE")
-    g1,g2 = cols(2,"large")
-    with g1:
-        st.plotly_chart(circular_gauge(fh,hclr), width="stretch", config=PLOTLY_CFG)
-        st.markdown(
-            f"<div style='text-align:center;margin-top:-6px;margin-bottom:4px;'>"
-            f"<span style='background:{hbg};color:{hclr};font-family:{FH};font-weight:700;"
-            f"font-size:0.95rem;padding:5px 20px;border-radius:20px;display:inline-block;'>"
-            f"{rating}</span></div>", unsafe_allow_html=True)
-    with g2:
-        st.markdown("<div style='padding-top:8px;'></div>", unsafe_allow_html=True)
-        for lbl,(got,mx) in parts.items():
-            pct = got/mx*100
-            clr = GREEN if pct>=70 else (AMBER if pct>=40 else RED)
-            st.markdown(
-                f"<div style='margin-bottom:12px;'>"
-                f"<div style='display:flex;justify-content:space-between;align-items:baseline;"
-                f"font-family:{FH};margin-bottom:5px;'>"
-                f"<span style='font-size:0.9rem;color:{TEXT};font-weight:500;'>{lbl}</span>"
-                f"<span style='font-family:{FM};font-weight:700;font-size:0.88rem;color:{clr};'>"
-                f"{got}/{mx}</span></div>"
-                f"<div style='height:5px;background:rgba(0,0,0,0.07);border-radius:3px;overflow:hidden;'>"
-                f"<div style='width:{pct:.0f}%;height:100%;background:{clr};"
-                f"border-radius:3px;transition:width .5s ease;'></div></div></div>",
-                unsafe_allow_html=True)
+    sec("Financial Health Score — toward your goal")
+    h1,h2=st.columns(2)
+    h1.markdown(f'<div class="card" style="padding:16px;text-align:center">{gauge(score,clr)}'
+                f'<div style="margin-top:2px"><span style="background:{bg};color:{clr};font-weight:700;font-size:.95rem;padding:5px 20px;border-radius:20px;display:inline-block">{rt}</span></div></div>',unsafe_allow_html=True)
+    bars=""
+    for k,(g,mx) in parts.items():
+        p=g/mx*100; c="#16794D" if p>=70 else("#B7791F" if p>=40 else "#C53929")
+        bars+=f'<div class="brk"><div class="l"><span class="nm">{k}</span><span class="sc" style="color:{c}">{g}/{mx}</span></div><div class="bar"><i style="width:{p:.0f}%;background:{c}"></i></div></div>'
+    h2.markdown(f'<div style="padding-top:8px">{bars}</div>',unsafe_allow_html=True)
+    note(f"Your financial health toward this goal is <b>{rt}</b>. On your current trajectory you are projected to reach "
+         f"<b>{min(ex['cov'],9.99)*100:.0f}%</b> of your {fmt(T)} goal "
+         f"({'on track' if ex['cov']>=1 else 'short of target'}).", "good" if score>=65 else("warn" if score>=45 else "alert"))
 
-    cap = risk_capacity(b); cap_lvl,cap_word = capacity_level(cap)
-    if fh<45:      note("Strengthen savings and emergency fund first — this matters more than any investment choice.", "alert")
-    elif cap_lvl>=4: note(f"Strong financial position — capacity to absorb investment volatility is {cap_word.lower()}.", "good")
-    else:           note(f"Financial health is {rating.lower()} and risk capacity is {cap_word.lower()}.", "info")
+    # ---- WHERE YOU STAND ----
+    sec("Where You Stand")
+    nowp=min(100,ex["now"]*100); projp=min(100,ex["cov"]*100)
+    st.markdown(f'<div class="goalwrap"><div class="gt">Progress to {fmt(T)}</div>'
+                f'<div class="ptrack"><div class="pp" style="width:{projp}%"></div><div class="pn" style="width:{nowp}%"></div></div>'
+                f'<div class="plab"><span>Now: {ex["now"]*100:.1f}% ({fmt(b["savings"])})</span><span>Projected in {int(sf(ss["goal_years"]))}y: {fmt(ex["fv"])}</span></div>'
+                f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px">'
+                f'<div class="gstat"><div class="l">Goal target</div><div class="v">{fmt(T)}</div><div class="s">{("$%s/mo via 4%% rule"%format(int(sf(ss["goal_income"])),",")) if ss["goal_mode"]=="income" else "lump sum"}</div></div>'
+                f'<div class="gstat"><div class="l">Projected value</div><div class="v">{fmt(ex["fv"])}</div><div class="s">@ {r_goal*100:.1f}% ({rec})</div></div>'
+                f'<div class="gstat"><div class="l">{"Surplus vs goal" if ex["fv"]>=T else "Shortfall"}</div><div class="v">{("+" if ex["fv"]>=T else "−")+fmt(abs(T-ex["fv"]))}</div><div class="s">{"ahead" if ex["fv"]>=T else "still needed"}</div></div>'
+                f'<div class="gstat"><div class="l">To stay on track</div><div class="v">{fmt(ex["req"])}/mo</div><div class="s">vs your {fmt(ex["Cm"])}/mo now</div></div>'
+                f'</div></div>',unsafe_allow_html=True)
+    ytg=ex["ytg"]
+    if ex["fv"]>=T: note(f"On track — at {fmt(ex['Cm'])}/mo you reach this goal in about {ytg:.1f} years.","good")
+    elif np.isfinite(ytg): note(f"At {fmt(ex['Cm'])}/mo you'd get there in about {ytg:.1f} years. Contributing {fmt(ex['req'])}/mo hits it in {int(sf(ss['goal_years']))}.","warn")
+    else: note(f"Current contributions won't reach this goal — raise savings toward {fmt(ex['req'])}/mo to hit it in {int(sf(ss['goal_years']))} years.","alert")
 
-    # Age context
-    years_retire = max(0, 65-age)
-    life_stage = ("Early career" if age<35 else "Mid career" if age<50
-                  else "Pre-retirement" if age<65 else "Retirement")
-    age_kind = "good" if age<30 else ("warn" if age>=45 else "info")
-    age_msg = (f"At {age}, compounding time works strongly in your favour — time absorbs volatility."
-               if age<30 else
-               f"At {age}, you're in {life_stage.lower()}. Estimated {years_retire} years to typical retirement.")
-    note(age_msg, age_kind)
-
-    section("RISK PROFILE — 10 QUESTIONS", TEAL)
-    note("These measure your personal comfort with volatility. Your profile updates live as you answer.", "info")
-
+    # ---- RISK PROFILE ----
+    sec("Risk Profile — 10 Questions")
+    note("These measure your personal comfort with volatility. Your profile updates live as you answer.")
     for i,(q,opts) in enumerate(QUESTIONS):
-        qk = f"q{i+1}"
-        if qk not in st.session_state: st.session_state[qk] = 0
-        stored = int(st.session_state[qk])
-        if stored<0 or stored>=len(opts): stored=0; st.session_state[qk]=0
-        with st.container(border=True):
-            st.markdown(
-                f"<div style='display:flex;gap:9px;align-items:flex-start;margin-bottom:4px;'>"
-                f"<span style='background:{TEAL_BG};color:{TEAL};font-family:{FH};font-size:0.68rem;"
-                f"font-weight:700;padding:2px 8px;border-radius:5px;flex-shrink:0;margin-top:2px;'>"
-                f"{i+1:02d}/10</span>"
-                f"<span style='font-family:{FH};font-size:0.95rem;font-weight:600;color:{TEXT};"
-                f"line-height:1.4;'>{q}</span></div>", unsafe_allow_html=True)
-            sel = st.radio(q, list(range(len(opts))), format_func=lambda x,o=opts: o[x],
-                           index=stored, key=f"radio_q{i+1}", label_visibility="collapsed")
-            st.session_state[qk] = int(sel)
-
-    tname,tdata,tscore = tolerance_profile()
-    st.session_state.update({"tol_name":tname,"tol_level":tdata["level"],
-                              "cap_level":cap_lvl,"cap_word":cap_word,"fh_score":fh})
-
-    section("RISK ANALYSIS", PURPLE)
-    # Age panel
-    st.markdown(
-        f"<div style='background:{CARD};border:1px solid {BD};border-radius:14px;"
-        f"padding:12px 16px;margin-bottom:10px;display:flex;gap:20px;align-items:center;flex-wrap:wrap;"
-        f"box-shadow:0 1px 4px rgba(0,0,0,0.04);'>"
-        f"<div><div style='font-family:{FH};font-size:0.65rem;font-weight:700;text-transform:uppercase;"
-        f"letter-spacing:0.07em;color:{MUTED};'>Age</div>"
-        f"<div style='font-family:{FH};font-size:1.55rem;font-weight:800;color:{TEXT};'>{age}</div></div>"
-        f"<div style='width:1px;height:38px;background:{BD};'></div>"
-        f"<div><div style='font-family:{FH};font-size:0.65rem;font-weight:700;text-transform:uppercase;"
-        f"letter-spacing:0.07em;color:{MUTED};'>Years to retirement (est.)</div>"
-        f"<div style='font-family:{FH};font-size:1.55rem;font-weight:800;color:{PRIMARY};'>"
-        f"{years_retire}</div></div>"
-        f"<div style='width:1px;height:38px;background:{BD};'></div>"
-        f"<div><div style='font-family:{FH};font-size:0.65rem;font-weight:700;text-transform:uppercase;"
-        f"letter-spacing:0.07em;color:{MUTED};'>Life stage</div>"
-        f"<div style='font-family:{FH};font-size:1rem;font-weight:700;color:{TEXT};'>"
-        f"{life_stage}</div></div></div>", unsafe_allow_html=True)
-
-    ra1,ra2,ra3 = cols(3,"small")
-    with ra1: metric_card("Risk Tolerance", tname,    f"Level {tdata['level']}/5 · score {tscore}/40",
-                           tdata["clr"], tdata["bg"])
-    with ra2:
-        cap_clrs=[RED,RED,AMBER,TEAL,GREEN]; cap_bgs=[RED_BG,RED_BG,AMBER_BG,TEAL_BG,GREEN_BG]
-        metric_card("Risk Capacity",   cap_word,  f"Level {cap_lvl}/5 · from your budget",
-                    cap_clrs[cap_lvl-1], cap_bgs[cap_lvl-1])
-    with ra3:
-        rec_name,_ = recommended_tier(cap_lvl, tdata["level"])
-        metric_card("Suggested Tier",  rec_name,  "Prudent match (lower of the two)",
-                    TIER_CLR[rec_name], TIER_BG[rec_name])
-
-    gd = tdata["level"] - cap_lvl
-    if gd>=2:   note(f"Appetite ({tname}) exceeds what finances support ({cap_word}). Start at {rec_name}.", "alert")
-    elif gd<=-2: note(f"Finances ({cap_word}) can support more risk than current comfort ({tname}). Step up gradually.", "info")
-    else:        note("Risk tolerance and capacity are well aligned — strong position to build a plan.", "good")
+        st.markdown(f'<div style="background:#fff;border:1px solid #E3E8EF;border-radius:14px;padding:12px 16px 4px;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.03)">'
+                    f'<span style="background:#D6F1F7;color:#0E7490;font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:5px;font-family:JetBrains Mono">{i+1:02d}/10</span> '
+                    f'<b style="font-size:.95rem">{q}</b></div>',unsafe_allow_html=True)
+        st.radio(q,list(range(4)),format_func=lambda x,o=opts:o[x],index=int(ss[f"quiz_q{i+1}"]),
+                 key=f"quiz_q{i+1}",label_visibility="collapsed",horizontal=True)
+    sec("Risk Analysis")
+    r1,r2,r3=st.columns(3)
+    r1.markdown(mcard("Risk Tolerance",tname,f"Level {tolL}/5 · score {tscore}/40",TIER_CLR.get(rec,'#16794D'),"#E7F5EC"),unsafe_allow_html=True)
+    capclr=["#C53929","#C53929","#B7791F","#0E7C7B","#16794D"][capL-1]; capbg=["#FBEAE7","#FBEAE7","#FBF3E2","#DFF2F1","#E7F5EC"][capL-1]
+    r2.markdown(mcard("Risk Capacity",capW,f"Level {capL}/5 · from your budget",capclr,capbg),unsafe_allow_html=True)
+    r3.markdown(mcard("Suggested Tier",rec,"Prudent match (lower of the two)",TIER_CLR[rec],TIER_BG[rec]),unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
-# PAGE: INVESTMENT PORTFOLIO
+# STEP 3 — PORTFOLIO
 # ════════════════════════════════════════════════════════════════
 def page_portfolio():
-    note("Five model portfolios from lowest to highest risk. Tap a tier to inspect it.", "info")
-
-    tol_lvl = st.session_state.get("tol_level",3)
-    cap_lvl = st.session_state.get("cap_level",3)
-    rec_name,_ = recommended_tier(cap_lvl, tol_lvl)
-    # Pre-compute to avoid any f-string dict issues
-    rec_clr = TIER_CLR.get(rec_name, PRIMARY)
-
-    if "tol_level" not in st.session_state:
-        note("Complete the Financial Health page to see your matched tier.", "warn")
-    else:
-        note(f"Based on your risk capacity and tolerance, your suggested starting tier is "
-             f"<strong style='color:{rec_clr};'>{rec_name}</strong>.", "good")
-
-    section("CHOOSE A TIER TO EXPLORE")
-    choice = tier_selector("selected_tier", rec_name, rec_name=rec_name)
-    m = TIER_METRICS[choice]
-    clr = TIER_CLR[choice]; cbg = TIER_BG[choice]
-
-    dl,dr = cols(2,"large")
-    with dl:
-        w = TIER_WEIGHTS[choice]
-        active = [(MPT_ASSETS[i],w[i]) for i in range(len(w)) if w[i]>0]
-        apal = [TEAL,"#5A4A7A",PRIMARY,AMBER,LGREEN,PURPLE]
-        st.plotly_chart(
-            donut([a for a,_ in active],[v for _,v in active],
-                  [apal[MPT_ASSETS.index(a)] for a,_ in active], choice),
-            width="stretch", config=PLOTLY_CFG)
-    with dr:
-        is_rec = (choice == rec_name)
-        sub_label = f"{choice} · suggested for you" if is_rec else choice
-        st.markdown(
-            f"<div style='background:{cbg};border:1px solid {BD};border-left:4px solid {clr};"
-            f"border-radius:0 14px 14px 0;padding:15px 18px;margin-bottom:10px;"
-            f"box-shadow:0 1px 4px rgba(0,0,0,0.04);'>"
-            f"<div style='font-family:{FH};font-size:1.5rem;font-weight:800;color:{clr};'>"
-            f"{sub_label}</div>"
-            f"<div style='font-family:{FH};font-size:0.82rem;color:{MUTED};margin-top:3px;'>"
-            f"Expected return <strong style='color:{TEXT};'>{m['ret']*100:.1f}%</strong> p.a."
-            f" · Volatility <strong style='color:{TEXT};'>{m['vol']*100:.1f}%</strong>"
-            f"</div></div>", unsafe_allow_html=True)
-        mm1,mm2 = cols(2,"small")
-        with mm1:
-            metric_card("Sharpe Ratio",       f"{m['sharpe']:.2f}",      "Return per unit of risk", PRIMARY, PRIMARY_BG)
-            metric_card("Value at Risk (95%)", f"{m['var95']*100:.1f}%",  "Worst year in 20 (1-yr)", RED,     RED_BG)
-        with mm2:
-            metric_card("Diversification",    f"{m['div_ratio']:.2f}×",  "Higher = better spread",  TEAL,    TEAL_BG)
-            metric_card("Est. Max Drawdown",   f"{m['max_dd']*100:.0f}%", "Peak-to-trough estimate", AMBER,   AMBER_BG)
-
-    section(f"INVESTMENT OPTIONS FOR {choice.upper()}", clr)
-    for opt in TIER_OPTIONS[choice]:
-        st.markdown(
-            f"<div style='background:{CARD};border:1px solid {BD};border-left:3px solid {clr};"
-            f"border-radius:0 10px 10px 0;padding:9px 14px;margin-bottom:5px;"
-            f"font-family:{FH};font-size:0.88rem;color:{TEXT};'>{opt}</div>",
-            unsafe_allow_html=True)
-
-    section("ALL TIERS COMPARED")
-    rows = ""
+    b=ss.get("budget") or compute_budget(ss)
+    capL=cap_level(capacity(b))[0]; tolL=tol_profile(ss)[1]; rec=rec_tier(capL,tolL); recClr=TIER_CLR.get(rec,"#16794D")
+    note("Five model portfolios from lowest to highest risk, with key risk and return figures for each.")
+    note(f'Based on your risk capacity and tolerance, your suggested starting tier is <b style="color:{recClr}">{rec}</b>.')
+    sec("Choose a tier to explore")
+    cols=st.columns(5)
     for i,t in enumerate(TIERS):
-        mt = TIER_METRICS[t]
-        hl = (f"background:{TIER_BG[t]};" if t==rec_name
-              else (f"background:{CARD};" if i%2==0 else f"background:{BG};"))
-        star = " ★" if t==rec_name else ""
-        tc = TIER_CLR[t]
-        rows += (f"<tr style='{hl}'>"
-                 f"<td style='padding:9px 11px;font-family:{FH};font-weight:700;color:{tc};"
-                 f"border-bottom:1px solid {BD};'>{t}{star}</td>"
-                 f"<td style='padding:9px 11px;font-family:{FM};font-size:0.82rem;color:{TEXT};"
-                 f"border-bottom:1px solid {BD};'>{mt['ret']*100:.1f}%</td>"
-                 f"<td style='padding:9px 11px;font-family:{FM};font-size:0.82rem;color:{TEXT};"
-                 f"border-bottom:1px solid {BD};'>{mt['vol']*100:.1f}%</td>"
-                 f"<td style='padding:9px 11px;font-family:{FM};font-size:0.82rem;color:{TEXT};"
-                 f"border-bottom:1px solid {BD};'>{mt['sharpe']:.2f}</td>"
-                 f"<td style='padding:9px 11px;font-family:{FM};font-size:0.82rem;color:{RED};"
-                 f"border-bottom:1px solid {BD};'>{mt['var95']*100:.1f}%</td>"
-                 f"<td style='padding:9px 11px;font-family:{FM};font-size:0.82rem;color:{AMBER};"
-                 f"border-bottom:1px solid {BD};'>{mt['max_dd']*100:.0f}%</td></tr>")
-    hdr = "".join(f"<th style='text-align:left;padding:8px 11px;background:{PRIMARY};color:#fff;"
-                  f"font-family:{FH};font-size:0.68rem;text-transform:uppercase;"
-                  f"letter-spacing:0.05em;font-weight:600;white-space:nowrap;'>{h}</th>"
-                  for h in ["Tier","Exp. Return","Volatility","Sharpe","VaR 95%","Max DD"])
-    st.markdown(
-        f"<div style='border:1px solid {BD};border-radius:12px;overflow:hidden;overflow-x:auto;'>"
-        f"<table style='width:100%;border-collapse:collapse;'>"
-        f"<thead><tr>{hdr}</tr></thead><tbody>{rows}</tbody></table></div>"
-        f"<div style='font-family:{FH};font-size:0.7rem;color:{MUTED};margin-top:6px;line-height:1.5;'>"
-        f"<strong>VaR 95%</strong>: worst 1-in-20 year loss. "
-        f"<strong>Max DD</strong>: peak-to-trough estimate. "
-        f"Long-run MPT assumptions — not forecasts.</div>", unsafe_allow_html=True)
+        lbl=("★ "+t) if t==rec else t
+        if cols[i].button(lbl,key=f"tier_{t}",type="primary" if t==ss["selected_tier"] else "secondary"):
+            ss["selected_tier"]=t; st.rerun()
+    t=ss["selected_tier"] if ss["selected_tier"] in TIERS else rec; m=TIER_M[t]; clr,bg=TIER_CLR[t],TIER_BG[t]
+    d1,d2=st.columns(2)
+    segs=[(f"{ASSETS[i]} {TIER_W[t][i]}%",TIER_W[t][i],ASSET_CLR[i]) for i in range(6) if TIER_W[t][i]>0]
+    d1.markdown(f'<div class="card" style="padding:16px">{donut(segs,t)}{legend(segs)}</div>',unsafe_allow_html=True)
+    title=f"{t} · suggested for you" if t==rec else t
+    d2.markdown(f'<div class="tierhead" style="border-left-color:{clr};background:{bg}"><h3 style="color:{clr}">{title}</h3>'
+                f'<div class="er">Expected return <b style="color:#1E2A32">{m["rp"]*100:.1f}%</b> p.a. · Volatility <b style="color:#1E2A32">{m["sd"]*100:.1f}%</b></div></div>',unsafe_allow_html=True)
+    mm=d2.columns(2)
+    mm[0].markdown(mcard("Sharpe Ratio",f"{m['sharpe']:.2f}","Return per unit of risk","#16794D","#E7F5EC"),unsafe_allow_html=True)
+    mm[0].markdown(mcard("Value at Risk (95%)",f"{m['var95']*100:.1f}%","Worst year in 20 (1-yr)","#C53929","#FBEAE7"),unsafe_allow_html=True)
+    mm[1].markdown(mcard("Diversification",f"{m['div']:.2f}×","Higher = better spread","#0E7C7B","#DFF2F1"),unsafe_allow_html=True)
+    mm[1].markdown(mcard("Est. Max Drawdown",f"{m['maxdd']*100:.0f}%","Peak-to-trough estimate","#B7791F","#FBF3E2"),unsafe_allow_html=True)
+    sec(f"Investment options for {t}")
+    st.markdown("".join(f'<div class="opt-item" style="border-left-color:{clr}">{o}</div>' for o in TIER_OPT[t]),unsafe_allow_html=True)
+    sec("All Tiers Compared")
+    rows=""
+    for tt in TIERS:
+        mt=TIER_M[tt]; star=" ★" if tt==rec else ""
+        rows+=(f'<tr style="background:{TIER_BG[tt] if tt==rec else "#fff"}"><td class="tn" style="color:{TIER_CLR[tt]}">{tt}{star}</td>'
+               f'<td>{mt["rp"]*100:.1f}%</td><td>{mt["sd"]*100:.1f}%</td><td>{mt["sharpe"]:.2f}</td>'
+               f'<td style="color:#C53929">{mt["var95"]*100:.1f}%</td><td style="color:#C53929">{mt["cvar95"]*100:.1f}%</td><td style="color:#B7791F">{mt["maxdd"]*100:.0f}%</td></tr>')
+    st.markdown(f'<table class="cmp"><thead><tr><th>Tier</th><th>Exp. Return</th><th>Volatility</th><th>Sharpe</th><th>VaR 95%</th><th>CVaR 95%</th><th>Max DD</th></tr></thead><tbody>{rows}</tbody></table>'
+                '<div class="cmpnote"><b>VaR 95%</b>: in the worst 1-in-20 year, losses are expected to exceed this. <b>CVaR 95%</b>: average loss in those worst years. <b>Max DD</b>: estimated peak-to-trough fall. Long-run assumptions, not forecasts.</div>',unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
-# PAGE: WHAT-IF SIMULATOR
+# STEP 4 — FORECAST
 # ════════════════════════════════════════════════════════════════
-def page_simulator():
-    note("Simulate how your wealth grows over time. Adjust the What-If sliders to see long-term impact.", "info")
-    b        = st.session_state.get("budget",{})
-    def_sav  = int(st.session_state.get("current_savings",15000))
-    def_con  = max(0,int(b.get("surplus",500))) if b else 500
-    def_age  = int(st.session_state.get("user_age",30))
-    def_tier = st.session_state.get("selected_tier","Balanced")
-
-    section("YOUR CURRENT SITUATION")
-    r1a,r1b,r1c = st.columns([1,1,1], gap="medium")
-    with r1a:
-        sim_age = st.number_input("Your age", min_value=18, max_value=80,
-                                   value=def_age, step=1, key="sim_age")
-    with r1b:
-        ret_age = st.number_input("Retirement age", min_value=int(sim_age)+1, max_value=90,
-                                   value=min(90,max(int(sim_age)+5,65)), step=1, key="sim_ret_age")
-    with r1c:
-        income_goal = st.number_input("Monthly income in retirement ($)",
-                                       min_value=0, step=500, value=5000, key="sim_income_goal")
-    r2a,r2b = st.columns([1,1], gap="medium")
-    with r2a: sim_sav = st.number_input("Current savings ($)", min_value=0, step=1000, value=def_sav, key="sim_sav")
-    with r2b: sim_con = st.number_input("Monthly contribution ($)", min_value=0, step=100, value=def_con, key="sim_con")
-
-    section("BASELINE PORTFOLIO")
-    base_tier = tier_selector("sim_base_tier", def_tier)
-
-    section("WHAT-IF ADJUSTMENTS", AMBER)
-    wi1,wi2 = st.columns([1,1], gap="medium")
-    with wi1:
-        extra = st.slider("Extra monthly savings ($)", 0, 3000, step=50, value=0, key="sim_extra")
-    with wi2:
-        if "sim_wi_tier" not in st.session_state: st.session_state["sim_wi_tier"] = base_tier
-        wi_tier = st.selectbox("Shift portfolio to", TIERS,
-                                index=TIERS.index(st.session_state["sim_wi_tier"])
-                                      if st.session_state["sim_wi_tier"] in TIERS else 2,
-                                key="sim_wi_tier_sel")
-        st.session_state["sim_wi_tier"] = wi_tier
-
-    changed = (extra>0) or (wi_tier!=base_tier)
-    if changed:
-        parts = []
-        if extra>0: parts.append(f"+${extra:,}/mo savings")
-        if wi_tier!=base_tier: parts.append(f"portfolio {base_tier} → {wi_tier}")
-        note(f"Comparing: {' and '.join(parts)}", "good")
-
-    years_show = 35
-    retire_in  = min(max(1,int(ret_age)-int(sim_age)), years_show)
-    target     = income_goal*12/0.04 if income_goal>0 else 0
-
-    bm = TIER_METRICS[base_tier]; wm = TIER_METRICS[wi_tier]
-    np.random.seed(42)
-    base_data = run_simulation(sim_sav, sim_con,       bm["ret"], bm["vol"], years_show)
-    np.random.seed(42)
-    wi_data   = run_simulation(sim_sav, sim_con+extra, wm["ret"], wm["vol"], years_show)
-
-    section("WEALTH PROJECTION — MONTE CARLO (400 PATHS)")
-    st.plotly_chart(
-        simulation_chart(base_data, wi_data if changed else None, years_show,
-                         retire_in, target if target>0 else None),
-        width="stretch", config=PLOTLY_CFG)
-    note(f"Shaded bands = 10th–90th percentile range. Solid line = median outcome. "
-         f"Returns modelled from long-run MPT assumptions for "
-         f"<strong>{base_tier}</strong> — not forecasts.", "info")
-
-    section("AT RETIREMENT SNAPSHOT", TEAL)
-    b50  = float(np.median(base_data[retire_in]))
-    wi50 = float(np.median(wi_data[retire_in]))
-    m1,m2,m3,m4 = cols(4,"small")
-    with m1: metric_card("Projected nest egg", f"${b50:,.0f}",  f"Median · {base_tier}", PRIMARY, PRIMARY_BG)
-    with m2:
-        mo4 = b50*0.04/12; ok4 = mo4>=income_goal
-        metric_card("Monthly income (4% rule)", f"${mo4:,.0f}",
-                    f"Goal: ${income_goal:,.0f}/mo",
-                    GREEN if ok4 else RED, GREEN_BG if ok4 else RED_BG)
-    with m3:
-        if target>0:
-            gap = b50-target
-            metric_card("Gap to target", f"+${gap:,.0f}" if gap>=0 else f"-${abs(gap):,.0f}",
-                        f"Target ${target:,.0f}",
-                        GREEN if gap>=0 else RED, GREEN_BG if gap>=0 else RED_BG)
-        else: metric_card("Target","Set income goal →","Enter retirement income above",MUTED,BG)
-    with m4:
-        if changed: metric_card("What-If uplift", f"+${wi50-b50:,.0f}" if wi50>=b50 else f"${wi50-b50:,.0f}",
-                                "vs baseline at retirement", AMBER, AMBER_BG)
-        else:       metric_card("What-If","Adjust above →","to see the impact",MUTED,BG)
-
-    if target>0:
-        if b50>=target: note(f"On track — {base_tier} path projected to meet ${income_goal:,.0f}/mo goal.", "good")
-        else: note(f"Projected ${target-b50:,.0f} short of target. Increasing contributions now makes the biggest difference.", "warn")
-
-    section("YEAR-BY-YEAR MILESTONES")
-    snap_yrs = sorted({y for y in [5,10,15,20,25,30,retire_in] if 0<y<=years_show})
-    rows = ""
-    for y in snap_yrs:
-        b50y=float(np.median(base_data[y])); w50y=float(np.median(wi_data[y])); diff=w50y-b50y
-        rl = " ← retirement" if y==retire_in else ""
-        ds = f"+${diff:,.0f}" if diff>0 else ("—" if diff==0 else f"-${abs(diff):,.0f}")
-        dc = GREEN if diff>0 else (RED if diff<0 else MUTED)
-        rows += (f"<tr><td style='padding:8px 11px;font-family:{FH};font-weight:600;color:{TEXT};"
-                 f"border-bottom:1px solid {BD};'>Year {y}{rl}</td>"
-                 f"<td style='padding:8px 11px;font-family:{FM};color:{PRIMARY};border-bottom:1px solid {BD};'>${b50y:,.0f}</td>"
-                 f"<td style='padding:8px 11px;font-family:{FM};color:{AMBER if changed else MUTED};border-bottom:1px solid {BD};'>${w50y:,.0f}</td>"
-                 f"<td style='padding:8px 11px;font-family:{FM};color:{dc};font-weight:700;border-bottom:1px solid {BD};'>"
-                 f"{ds if changed else '—'}</td></tr>")
-    hdr_l = ["Milestone",f"Baseline ({base_tier})",f"What-If ({wi_tier})","Difference"]
-    hdr_h = "".join(f"<th style='text-align:left;padding:8px 11px;background:{PRIMARY};color:#fff;"
-                    f"font-family:{FH};font-size:0.68rem;text-transform:uppercase;font-weight:600;'>{h}</th>"
-                    for h in hdr_l)
-    st.markdown(
-        f"<div style='border:1px solid {BD};border-radius:12px;overflow:hidden;overflow-x:auto;'>"
-        f"<table style='width:100%;border-collapse:collapse;'>"
-        f"<thead><tr>{hdr_h}</tr></thead><tbody>{rows}</tbody></table></div>",
-        unsafe_allow_html=True)
+def page_forecast():
+    note("Drag the sliders to build a custom portfolio. Metrics update using Modern Portfolio Theory.")
+    sec("Load a Preset")
+    pc=st.columns(5)
+    for i,t in enumerate(TIERS):
+        if pc[i].button(t,key=f"preset_{t}",type="secondary"):
+            for j in range(6): ss[f"w{j}"]=TIER_W[t][j]
+            st.rerun()
+    left,right=st.columns(2)
+    with left:
+        st.markdown('<div style="font-size:.68rem;font-weight:700;text-transform:uppercase;color:#64748B;margin-bottom:4px">Asset Allocation</div>',unsafe_allow_html=True)
+        for i,nm in enumerate(ASSETS):
+            st.slider(f"{nm}  ·  ret {R[i]*100:.1f}% / vol {V[i]*100:.0f}%",0,100,key=f"w{i}")
+        wsum=sum(int(ss[f"w{i}"]) for i in range(6))
+        st.markdown(f'<div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid #E3E8EF;padding-top:10px;font-family:JetBrains Mono">'
+                    f'<span>Total</span><span style="color:{"#16794D" if wsum==100 else "#C53929"}">{wsum}%</span></div>',unsafe_allow_html=True)
+    w=[int(ss[f"w{i}"]) for i in range(6)]; wn=[x/sum(w)*100 for x in w] if sum(w)>0 else w
+    m=metrics(wn)
+    with right:
+        lvl="Defensive" if m["sd"]<.05 else "Conservative" if m["sd"]<.085 else "Moderate" if m["sd"]<.125 else "Growth" if m["sd"]<.155 else "Aggressive"
+        st.markdown(f'<div class="metric" style="border-top-color:#F97316"><div class="ml">Portfolio Risk Level</div>'
+                    f'<div class="mv" style="color:#F97316">{lvl}</div><div class="ms">Volatility: {m["sd"]*100:.1f}% p.a.</div></div>',unsafe_allow_html=True)
+        q=st.columns(2)
+        q[0].markdown(mcard("Exp. Return",f"{m['rp']*100:.1f}%","Per year","#16794D","#E7F5EC"),unsafe_allow_html=True)
+        q[0].markdown(mcard("VaR 95%",f"{m['var95']*100:.1f}%","Worst 1-in-20 year","#C53929","#FBEAE7"),unsafe_allow_html=True)
+        q[1].markdown(mcard("Sharpe Ratio",f"{m['sharpe']:.2f}","Risk-adjusted return","#0E7C7B","#DFF2F1"),unsafe_allow_html=True)
+        q[1].markdown(mcard("Max Drawdown",f"{m['maxdd']*100:.0f}%","Est. peak-to-trough","#B7791F","#FBF3E2"),unsafe_allow_html=True)
+        segs=[(ASSETS[i],w[i],ASSET_CLR[i]) for i in range(6) if w[i]>0]
+        st.markdown(f'<div class="card" style="padding:14px;margin-top:10px">{donut(segs,str(sum(w))+"%")}{legend(segs)}</div>',unsafe_allow_html=True)
+    P=10000
+    sec("1-Year Outcome Scenarios (on $10,000 invested)")
+    s1=st.columns(3)
+    for col,(lab,val,clr) in zip(s1,[("BEAR (−2σ)",P*(1+m["rp"]-2*m["sd"]),"#C53929"),("BASE",P*(1+m["rp"]),"#16794D"),("BULL (+1σ)",P*(1+m["rp"]+m["sd"]),"#16794D")]):
+        d=val-P; dc="#16794D" if d>=0 else "#C53929"
+        col.markdown(f'<div class="scen" style="border-top-color:{clr}"><div class="sl">{lab}</div><div class="sv" style="color:{clr}">{fmt(val)}</div>'
+                     f'<div class="sd" style="color:{dc}">{"+" if d>=0 else "−"}{fmt(abs(d))} ({d/P*100:+.1f}%)</div></div>',unsafe_allow_html=True)
+    sec("5-Year Projection (on $10,000 invested)")
+    s5=st.columns(3)
+    for col,(lab,val,clr) in zip(s5,[("WORST",P*(1+m["rp"]-Z*m["sd"])**5,"#C53929"),("EXPECTED",P*(1+m["rp"])**5,"#0E7C7B"),("BEST",P*(1+m["rp"]+m["sd"])**5,"#16794D")]):
+        col.markdown(f'<div class="scen" style="border-top-color:{clr}"><div class="sl">{lab}</div><div class="sv" style="color:{"#16794D" if val>=P else "#C53929"}">{fmt(val)}</div>'
+                     f'<div class="sd">{ (val/P-1)*100:+.0f}% total</div></div>',unsafe_allow_html=True)
+    note("Projections use long-run capital-market assumptions and are <b>estimates, not guarantees</b>. Figures are before taxes and fees.","warn")
+    # goal progress with the custom portfolio
+    b=ss.get("budget") or compute_budget(ss); T=goal_target(ss); yrs=sf(ss["goal_years"]) or 1
+    fv=future_value(b["savings"],max(0,b["surplus"]),m["rp"],yrs); projp=min(100,fv/T*100) if T>0 else 0
+    sec("Reaching Your Ultimate Goal With This Portfolio")
+    st.markdown(f'<div class="goalwrap"><div class="gt">Progress to {fmt(T)}</div>'
+                f'<div class="ptrack"><div class="pp" style="width:{projp}%"></div></div>'
+                f'<div class="plab"><span>This portfolio @ {m["rp"]*100:.1f}%</span><span>Projected in {int(yrs)}y: {fmt(fv)} ({projp:.0f}%)</span></div></div>',unsafe_allow_html=True)
 
 # ════════════════════════════════════════════════════════════════
-# PAGE: ACTION PLAN
+# STEP 5 — ACTIONS
 # ════════════════════════════════════════════════════════════════
-def page_actions():
-    b = st.session_state.get("budget",{})
-    if not b or b.get("income",0)<=0:
-        note("Complete the Budget and Financial Health pages to generate your action plan.", "info"); return
-
-    fh       = st.session_state.get("fh_score", financial_health_score(b)[0])
-    rating,_,_ = health_rating(fh)
-    cap_lvl  = st.session_state.get("cap_level",3)
-    cap_word = st.session_state.get("cap_word","Moderate")
-    tol_lvl  = st.session_state.get("tol_level",3)
-    tname    = st.session_state.get("tol_name","Balanced")
-    rec_name,_ = recommended_tier(cap_lvl, tol_lvl)
-
-    recs = []
+def build_recs(b,score,capL,capW,tolL,tname,rec):
+    recs=[]
     if b["runway"]<3:
-        target=b["essential"]*6; gap_amt=max(0,target-b["savings"])
-        txt = (f"You have {b['runway']:.1f} months saved. Aim for 6 months (~${target:,.0f}). "
-               f"At ${b['surplus']:,.0f}/mo surplus, that's ~{gap_amt/b['surplus']:.0f} months away."
-               if b["surplus"]>0 else
-               f"You have {b['runway']:.1f} months saved and no surplus — free up cash flow first.")
-        recs.append(("alert","Build your emergency fund first",txt))
+        tgt=b["essential"]*6; gap=max(0,tgt-b["savings"])
+        recs.append(("alert","Build your emergency fund first",
+            f"You have {b['runway']:.1f} months of essential expenses saved. Aim for 6 months (~{fmt(tgt)}). At your current surplus of {fmt(b['surplus'])}/mo, that is about {round(gap/b['surplus']) if b['surplus']>0 else '—'} months away." if b["surplus"]>0
+            else f"You have {b['runway']:.1f} months saved and no surplus — free up cash flow first."))
     elif b["runway"]<6:
-        recs.append(("warn","Top up your emergency fund",
-            f"You have {b['runway']:.1f} months. Building to 6 gives a full buffer before investing."))
-    sr = b["savings_rate"]
-    if sr<0:
-        recs.append(("alert","You are spending more than you earn",
-            f"Expenses exceed income by ${abs(b['surplus']):,.0f}/mo. No investment can outrun a monthly deficit."))
-    elif sr<0.10:
-        recs.append(("warn","Lift your savings rate",
-            f"Saving {sr*100:.0f}% of income. Reaching 20% (${b['income']*0.20:,.0f}/mo) accelerates every goal."))
-    if b["needs"]/b["income"]>0.55:
-        recs.append(("warn","Fixed costs are high",
-            f"Needs are {b['needs']/b['income']*100:.0f}% of income (ideal ≤50%). Housing, transport, and insurance are the usual culprits — structural changes here free up the most room."))
-    if b["wants"]/b["income"]>0.32:
-        recs.append(("info","Discretionary spending is above the guide",
-            f"Wants are {b['wants']/b['income']*100:.0f}% (ideal ≤30%). Redirecting part of this to savings compounds fast."))
-    if b["dti"]>0.20:
-        recs.append(("warn","Debt load is elevated",
-            f"Debt repayments are {b['dti']*100:.0f}% of income. Clearing high-interest debt is effectively a guaranteed return."))
-    gd = tol_lvl - cap_lvl
-    if gd>=2:    recs.append(("alert","Do not invest beyond your capacity",
-                    f"Comfort with risk ({tname}) exceeds what finances support ({cap_word}). Start at {rec_name}."))
-    elif gd<=-2: recs.append(("info","You can afford more growth when ready",
-                    f"Your finances ({cap_word}) could support more risk than current comfort ({tname}). Step up gradually."))
-    if fh>=65 and b["runway"]>=6:
-        recs.append(("good","You are ready to invest systematically",
-            f"Strong foundation. Consider ${max(0,b['surplus']):,.0f}/mo automated into {rec_name} tier."))
-    if not any(k in ("alert","warn") for k,_,_ in recs):
-        recs.append(("good","Your finances are in good shape",
-            "No critical issues. Keep contributing consistently and review quarterly."))
+        recs.append(("warn","Top up your emergency fund",f"You have {b['runway']:.1f} months. Building to 6 gives a full buffer before taking investment risk."))
+    if b["sr"]<0: recs.append(("alert","You are spending more than you earn",f"Expenses exceed income by {fmt(-b['surplus'])}/mo. No investment can outrun a monthly deficit."))
+    elif b["sr"]<0.10: recs.append(("warn","Lift your savings rate",f"You are saving {b['sr']*100:.0f}% of income. Reaching 20% ({fmt(b['income']*0.20)}/mo) accelerates your goal."))
+    if b["income"]>0 and b["needs"]/b["income"]>0.55: recs.append(("warn","Fixed costs are high",f"Needs are {b['needs']/b['income']*100:.0f}% of income (ideal ≤50%). Housing, transport, and insurance are the usual culprits — structural changes here free up the most room."))
+    if b["dti"]>0.20: recs.append(("warn","Debt load is elevated",f"Debt repayments are {b['dti']*100:.0f}% of income. Clearing high-interest debt is effectively a guaranteed return."))
+    gd=tolL-capL
+    if gd>=2: recs.append(("alert","Do not invest beyond your capacity",f"Your comfort with risk ({tname}) exceeds what your finances support ({capW}). Start at {rec}."))
+    elif gd<=-2: recs.append(("info","You can afford more growth when ready",f"Your finances ({capW}) could support more risk than your current comfort ({tname}). Increase exposure gradually as confidence builds."))
+    if score>=65 and b["runway"]>=6: recs.append(("good","You are positioned to invest toward your goal",f"Strong foundation. Consider {fmt(max(0,b['surplus']))}/mo automated into the {rec} tier."))
+    if not any(k in("alert","warn") for k,_,_ in recs): recs.append(("good","You are on a healthy path to your goal","No critical issues. Keep contributing consistently and review quarterly."))
+    recs.sort(key=lambda r:{"alert":0,"warn":1,"info":2,"good":3}[r[0]]); return recs
 
-    recs.sort(key=lambda r:{"alert":0,"warn":1,"info":2,"good":3}.get(r[0],4))
-    n_alert = sum(1 for r in recs if r[0]=="alert")
-    n_warn  = sum(1 for r in recs if r[0]=="warn")
-    readiness = max(0,min(100, fh - n_alert*12 - n_warn*5))
-    rdg,rclr,rbg = health_rating(readiness)
-    rec_clr = TIER_CLR.get(rec_name, PRIMARY)
+def report_text(b,score,rt,capW,tname,rec,recs,T,fv,yrs,r):
+    L=["SERALUNG FINANCE — PERSONAL FINANCIAL REPORT","="*52,"","Educational only. Not personal financial advice.","",
+       "ULTIMATE GOAL","-"*52,f"  Target:           {fmt(T)}",f"  Projected in {yrs:g}y:  {fmt(fv)} @ {r*100:.1f}% p.a.",f"  Progress:         {fv/T*100:.0f}% of target" if T>0 else "  Progress:         —","",
+       "GOAL-BASED FINANCIAL HEALTH","-"*52,f"  Score:            {score}/100",f"  Rating:           {rt}","",
+       "MONTHLY CASH FLOW","-"*52,f"  Income:           {fmt(b['income'])}",f"  Expenses:         {fmt(b['total'])}",f"  Surplus:          {fmt(b['surplus'])}",f"  Savings rate:     {b['sr']*100:.1f}%","",
+       "EMERGENCY FUND","-"*52,f"  Cash savings:     {fmt(b['savings'])}",f"  Essentials/mo:    {fmt(b['essential'])}",f"  Runway:           {b['runway']:.1f} months","",
+       "RISK PROFILE","-"*52,f"  Tolerance:        {tname}",f"  Capacity:         {capW}",f"  Suggested tier:   {rec}","","PRIORITISED ACTIONS","-"*52]
+    tg={"alert":"[DO FIRST] ","warn":"[IMPORTANT] ","info":"[CONSIDER] ","good":"[ON TRACK] "}
+    for i,(k,t,d) in enumerate(recs,1):
+        L.append(f"  {i}. {tg[k]}{t}"); cur=""
+        for wd in d.split():
+            if len(cur)+len(wd)+1>66: L.append("     "+cur); cur=wd
+            else: cur=(cur+" "+wd).strip()
+        if cur: L.append("     "+cur)
+        L.append("")
+    L+=["","Generated by Seralung Finance."]
+    return "\n".join(L)
 
-    section("INVESTMENT READINESS")
-    rr1,rr2 = cols(2,"large")
-    with rr1: st.plotly_chart(circular_gauge(readiness,rclr), width="stretch", config=PLOTLY_CFG)
-    with rr2:
-        pad = "8px" if IS_MOBILE else "26px"
-        st.markdown(
-            f"<div style='background:{rbg};border:1px solid {BD};border-left:4px solid {rclr};"
-            f"border-radius:0 14px 14px 0;padding:16px 20px;margin-top:{pad};"
-            f"box-shadow:0 1px 4px rgba(0,0,0,0.04);'>"
-            f"<div style='font-family:{FH};font-size:0.65rem;font-weight:700;text-transform:uppercase;"
-            f"letter-spacing:0.08em;color:{MUTED};margin-bottom:4px;'>Overall</div>"
-            f"<div style='font-family:{FH};font-size:1.65rem;font-weight:800;color:{rclr};'>{rdg}</div>"
-            f"<div style='font-family:{FH};font-size:0.85rem;color:{MUTED};margin-top:5px;line-height:1.5;'>"
-            f"{n_alert} critical item{'s' if n_alert!=1 else ''} and {n_warn} to watch. "
-            f"Suggested portfolio: <strong style='color:{rec_clr};'>{rec_name}</strong>.</div></div>",
-            unsafe_allow_html=True)
+def calculation_notes():
+    return """**How every number is calculated**
 
-    section("YOUR PRIORITISED ACTIONS", PURPLE)
-    cfg_map = {"alert":(RED_BG,RED),"warn":(AMBER_BG,AMBER),
-               "info":(PRIMARY_BG,PRIMARY),"good":(GREEN_BG,GREEN)}
-    tag_map = {"alert":"Do first","warn":"Important","info":"Consider","good":"On track"}
-    for rank,(kind,title,text) in enumerate(recs,1):
-        bg2,ac = cfg_map.get(kind,cfg_map["info"])
-        tag = tag_map.get(kind,"")
-        st.markdown(
-            f"<div style='background:{CARD};border:1px solid {BD};border-left:3.5px solid {ac};"
-            f"border-radius:0 14px 14px 0;padding:13px 16px;margin-bottom:8px;"
-            f"box-shadow:0 1px 4px rgba(0,0,0,0.03);'>"
-            f"<div style='display:flex;align-items:center;gap:10px;margin-bottom:5px;flex-wrap:wrap;'>"
-            f"<span style='background:{ac};color:#fff;font-family:{FH};font-size:0.78rem;"
-            f"font-weight:800;width:24px;height:24px;border-radius:8px;display:inline-flex;"
-            f"align-items:center;justify-content:center;flex-shrink:0;'>{rank}</span>"
-            f"<span style='background:{bg2};color:{ac};font-family:{FH};font-size:0.6rem;"
-            f"font-weight:700;padding:2px 9px;border-radius:20px;text-transform:uppercase;"
-            f"letter-spacing:0.05em;'>{tag}</span>"
-            f"<span style='font-family:{FH};font-size:0.97rem;font-weight:700;color:{TEXT};'>"
-            f"{title}</span></div>"
-            f"<div style='font-family:{FH};font-size:0.87rem;color:{MUTED};line-height:1.6;"
-            f"padding-left:34px;'>{text}</div></div>",
-            unsafe_allow_html=True)
+**Budget.** Income = primary + secondary. Each expense is classed Need / Want / Savings.
+Surplus = income − total expenses. Savings rate = surplus ÷ income.
+Essentials = sum of Needs. Emergency runway = cash savings ÷ monthly essentials.
+Debt-to-income (DTI) = debt repayments ÷ income.
 
-    section("DOWNLOAD YOUR SUMMARY", PURPLE)
-    st.download_button(
-        "  Download summary (.txt)",
-        data=build_summary_text(b,fh,rating,cap_word,tname,rec_name,recs),
-        file_name="seralung_finance_summary.txt", mime="text/plain",
-        use_container_width=True)
-    st.caption("Your score, cash flow, runway, risk profile and action plan — easy to print or share.")
+**Portfolio metrics (Modern Portfolio Theory).** For weights w (summing to 100%):
+• Expected return Rp = Σ wᵢ·rᵢ  • Variance σ² = wᵀΣw, where Σᵢⱼ = σᵢ·σⱼ·ρᵢⱼ  • Volatility σ = √σ²
+• Sharpe = (Rp − Rf) ÷ σ, with Rf = 3.5%
+• VaR 95% (1-yr, parametric-normal) = max(0, 1.645·σ − Rp)
+• CVaR 95% (expected shortfall) = max(0, σ·φ(1.645)/0.05 − Rp), φ(1.645)=0.1031
+• Diversification ratio = (Σ wᵢ·σᵢ) ÷ σ   • Est. max drawdown ≈ min(95%, 2.4·σ)
+
+**Scenarios (on $10,000).** 1-yr: Bear = P·(1+Rp−2σ), Base = P·(1+Rp), Bull = P·(1+Rp+σ).
+5-yr: Worst = P·(1+Rp−1.645σ)⁵, Expected = P·(1+Rp)⁵, Best = P·(1+Rp+σ)⁵.
+
+**Ultimate Goal (time value of money, monthly compounding).** i = r/12, m = years·12:
+• Projected value FV = S₀·(1+i)ᵐ + C·[((1+i)ᵐ−1)/i]  (S₀ = savings, C = monthly contribution)
+• Target from passive income = (annual income) ÷ 4% safe-withdrawal rate
+• Required monthly C* = (T − S₀·(1+i)ᵐ)·i ÷ ((1+i)ᵐ−1)
+• Years to reach T = ln((T + C/i)/(S₀ + C/i)) ÷ ln(1+i) ÷ 12
+
+**GOAL-BASED financial health (0–100)** — the headline change:
+• Goal trajectory (50 pts) = min(1, FV ÷ T) · 50  ← how far your projection reaches the goal
+• Emergency runway (20 pts) = min(1, runway ÷ 6) · 20
+• Savings rate (15 pts) = min(1, savings rate ÷ 20%) · 15
+• Debt load (15 pts) = 15 if DTI ≤ 20% else max(0, 15 − (DTI−20%)·60)
+The return r used for the trajectory is the expected return of your *suggested* tier
+(from risk capacity + tolerance), so the score reflects a prudent path to the goal."""
+
+def page_actions():
+    b=ss.get("budget") or compute_budget(ss)
+    T=goal_target(ss); capL,capW=cap_level(capacity(b)); tname,tolL,_=tol_profile(ss); rec=rec_tier(capL,tolL)
+    r_goal=TIER_M[rec]["rp"]; yrs=sf(ss["goal_years"]) or 1
+    score,(parts,ex)=goal_health(b,T,r_goal,yrs); rt,_,_=rating(score)
+    recs=build_recs(b,score,capL,capW,tolL,tname,rec)
+    nA=sum(1 for r in recs if r[0]=="alert"); nW=sum(1 for r in recs if r[0]=="warn")
+    readiness=max(0,min(100,score-nA*12-nW*5)); rdg,rclr,rbg=rating(readiness); recClr=TIER_CLR.get(rec,"#16794D")
+    projp=min(100,ex["cov"]*100) if T>0 else 0
+    sec("Investment Readiness")
+    a1,a2=st.columns(2)
+    a1.markdown(f'<div class="card" style="padding:16px">{gauge(readiness,rclr)}</div>',unsafe_allow_html=True)
+    a2.markdown(f'<div class="readwrap" style="border-left-color:{rclr};background:{rbg}"><div class="ov">Overall</div>'
+                f'<div class="rt" style="color:{rclr}">{rdg}</div><div class="rd">{nA} critical item{"s" if nA!=1 else ""} and {nW} to watch. '
+                f'Suggested portfolio: <b style="color:{recClr}">{rec}</b>.<br>You are projected to reach <b style="color:#16794D">{projp:.0f}%</b> of your {fmt(T)} goal in {int(yrs)} years.</div></div>',unsafe_allow_html=True)
+    sec("Your Prioritised Action Plan")
+    cmap={"alert":("#FBEAE7","#C53929"),"warn":("#FBF3E2","#B7791F"),"info":("#E7F5EC","#16794D"),"good":("#E7F5EC","#16794D")}
+    tmap={"alert":"Do first","warn":"Important","info":"Consider","good":"On track"}
+    for i,(k,t,d) in enumerate(recs,1):
+        bg2,ac=cmap[k]
+        st.markdown(f'<div class="action" style="border-left:3.5px solid {ac}"><div class="ah">'
+                    f'<span class="num" style="background:{ac}">{i}</span><span class="tag" style="background:{bg2};color:{ac}">{tmap[k]}</span>'
+                    f'<span class="at">{t}</span></div><div class="ad">{d}</div></div>',unsafe_allow_html=True)
+    fv=ex["fv"]
+    st.download_button("⤓ Download My Financial Report (.txt)",
+        data=report_text(b,score,rt,capW,tname,rec,recs,T,fv,yrs,r_goal),
+        file_name="seralung_finance_report.txt",mime="text/plain",use_container_width=True)
+    with st.expander("📐 See the calculation details (every formula)"):
+        st.markdown(calculation_notes())
+    sec("Share Your Feedback")
+    if ss["fb_sent"]:
+        st.markdown('<div class="card" style="padding:18px"><b>Thanks for your feedback ✓</b><br><span style="color:#64748B">It helps us improve Seralung Finance.</span></div>',unsafe_allow_html=True)
+    else:
+        st.caption("Help us improve Seralung Finance — your feedback is saved for this session.")
+        fc=st.columns(5)
+        for n in range(1,6):
+            if fc[n-1].button("★" if n<=ss["fb_rating"] else "☆",key=f"star_{n}",type="secondary"):
+                ss["fb_rating"]=n; st.rerun()
+        st.text_input("Your name",key="fb_name",placeholder="e.g. Sarah")
+        st.text_area("Your feedback",key="fb_text",placeholder="What did you think? What could be better?")
+        if st.button("✓ Submit Feedback",disabled=ss["fb_rating"]==0):
+            ss["fb_sent"]=True; st.rerun()
 
 # ════════════════════════════════════════════════════════════════
-# PAGE DISPATCH
+# DISPATCH + BOTTOM NAV
 # ════════════════════════════════════════════════════════════════
-{"budget":page_budget,"health":page_health,"portfolio":page_portfolio,
- "simulator":page_simulator,"actions":page_actions}[current_page]()
+{1:page_budget,2:page_health,3:page_portfolio,4:page_forecast,5:page_actions}[step]()
 
-# ════════════════════════════════════════════════════════════════
-# FOOTER
-# ════════════════════════════════════════════════════════════════
-st.markdown(
-    f"<div style='border-top:1px solid {BD};margin-top:2.5rem;padding:14px 0 6px;"
-    f"font-family:{FH};font-size:0.72rem;color:{DIM};text-align:center;'>"
-    f"<strong style='color:{PRIMARY};'>Seralung Finance</strong>"
-    f" &nbsp;·&nbsp; Understand Risk. Invest with Confidence."
-    f"<br><span style='font-size:0.66rem;'>Educational purposes only — not personal "
-    f"financial advice — consult a licensed financial adviser before investing.</span></div>",
-    unsafe_allow_html=True)
+st.markdown('<div style="height:14px"></div>',unsafe_allow_html=True)
+segs="".join(f'<span style="width:42px;height:5px;border-radius:4px;background:{STEP_META[i][3] if i<step else "#E2E8F0"};display:inline-block;margin-right:7px"></span>' for i in range(5))
+nb1,nb2,nb3=st.columns([1,2,1])
+with nb1:
+    if st.button("‹ Back",key="backbtn",disabled=step==1,type="secondary"):
+        goto(step-1); st.rerun()
+with nb2:
+    st.markdown(f'<div style="text-align:center;padding-top:8px">{segs}</div>',unsafe_allow_html=True)
+with nb3:
+    if step<5:
+        if st.button("Next Step ›",key="nextbtn"):
+            goto(step+1); st.rerun()
+    else:
+        if st.button("Complete!",key="donebtn"):
+            st.balloons()
+
+st.markdown('<div style="border-top:1px solid #E3E8EF;margin-top:24px;padding:14px 0;text-align:center;font-size:.72rem;color:#94A3B8">'
+            '<b style="color:#16794D">Seralung Finance</b> · Educational only — not personal financial advice.</div>',unsafe_allow_html=True)
