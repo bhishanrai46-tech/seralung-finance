@@ -16,6 +16,8 @@ import base64
 import numpy as np
 import pandas as pd
 import streamlit as st
+from health_engine import calculate_institutional_financial_health
+from markets import page_markets
 
 st.set_page_config(page_title="Seralung Finance", layout="wide", initial_sidebar_state="collapsed")
 
@@ -59,7 +61,6 @@ QUESTIONS = [
  ("How do market swings make you feel?",["Very anxious","Uneasy","Mostly calm","Indifferent — it is normal"]),
  ("Your investment knowledge level:",["Beginner","Some understanding","Confident","Advanced"])]
 TOL = [("Conservative",10,18,1),("Moderately Conservative",19,25,2),("Balanced",26,31,3),("Growth",32,36,4),("Aggressive",37,40,5)]
-PROT_PTS = {"Well protected & stable":15,"Partly protected":8,"Minimal or unstable":0}
 
 def sf(x):
     try:
@@ -141,23 +142,6 @@ def goal_assess(S0,Cm,rp,sd,T,years,infl,drag):
     prob,med=prob_success(round(S0,-2),round(Cm,1),round(rr,4),round(sd,4),int(max(1,years)),round(max(1,T),-2))
     return dict(rr=rr,prob=prob,med=med,req=required_contribution(T,S0,rr,years),
                 ytg=years_to_goal(T,S0,Cm,rr),now=S0/T if T>0 else 0,Cm=Cm)
-
-def foundation_score(b,debt_rate,prot):
-    p_run=min(1,b["runway"]/6)*35
-    base=25*(1-min(1,b["dti"]/0.36))            # debt-service vs 36% lending norm
-    if b["dti"]>0:
-        cost=1+max(0,debt_rate-0.08)*3           # interest above 8% amplifies the penalty
-        p_debt=max(0,25-(25-base)*min(2.5,cost))
-    else:
-        p_debt=25
-    p_sr=min(1,max(0,b["sr"])/0.20)*25
-    p_prot=PROT_PTS.get(prot,8)
-    score=round(min(100,p_run+p_debt+p_sr+p_prot))
-    return score,{"Emergency runway":(round(p_run),35),"Debt burden":(round(p_debt),25),
-                  "Savings rate":(round(p_sr),25),"Protection & stability":(round(p_prot),15)}
-
-def blend_weights(years):
-    wg=min(0.60,max(0.40,0.65-0.01*years)); return 1-wg,wg
 
 def rating(s):
     return ("Excellent","#16794D","#E7F5EC") if s>=80 else ("Good","#0E7C7B","#DFF2F1") if s>=65 \
@@ -258,18 +242,19 @@ div[data-testid="stRadio"] [role="radiogroup"]>label:hover{background:#E7F5EC}
 STEP_META=[("budget","Budget","📁","#F59E0B","#FBEFD8","Budget","Know your financial health & risk before investing"),
            ("health","Fin. Health","💎","#06B6D4","#D6F1F7","Financial Health","Set your goal, then score your fitness to reach it"),
            ("portfolio","Portfolio","◔","#7C3AED","#ECE6FB","Portfolio Diversification","Explore investment tiers"),
-           ("forecast","Forecast","📈","#F97316","#FCE7D6","Forecast","Forecast your portfolio growth"),
+           ("markets","Markets","📈","#F97316","#FCE7D6","Markets","Live ASX prices — stocks, ETFs & property"),
            ("actions","Actions","✅","#10B981","#D7F5E6","Action Plan","Get your personalised plan")]
 fmt=lambda n:"$"+format(int(round(n)),",")
 
 # ════════════════════════════ STATE ════════════════════════════
 def init_state():
     d={"step":1,"max_step":1,"income_primary":6000,"income_secondary":0,"savings":15000,
-       "invested_assets":25000,"employer_contrib":0,"debt_rate":8.0,"inflation":2.5,"drag":0.7,
-       "protection":"Partly protected","entry_mode":"individual","total_expenses":0,"selected_tier":"Defensive",
+       "total_assets":60000,"total_liabilities":20000,"employer_contrib":0,
+       "age":35,"dependents":0,"has_insurance":True,"tax_adv_pct":50,"inflation":2.5,"tax_drag_max":1.5,
+       "entry_mode":"individual","total_expenses":0,"selected_tier":"Defensive",
        "goal_mode":"income","goal_income":5000,"goal_lump":1000000,"goal_years":25,
        "fb_rating":0,"fb_name":"","fb_text":"","fb_sent":False,
-       **{f"quiz_q{i}":2 for i in range(1,11)},**{f"w{i}":TIER_W["Balanced"][i] for i in range(6)}}
+       **{f"quiz_q{i}":2 for i in range(1,11)}}
     for k,v in d.items(): st.session_state.setdefault(k,v)
     if "expenses_df" not in st.session_state:
         st.session_state["expenses_df"]=pd.DataFrame(DEFAULT_EXP,columns=["Expense","Category","Amount"])
@@ -303,17 +288,34 @@ def mcard(l,v,s,clr="#16794D",bg="#fff"):
     return f'<div class="metric" style="border-top-color:{clr};background:{bg}"><div class="ml">{l}</div><div class="mv" style="color:{clr}">{v}</div><div class="ms">{s}</div></div>'
 
 # ════════════════════════════ STEP 1 — BUDGET ════════════════════════════
+def assess_health(b):
+    """Assemble inputs and run the institutional engine + a complementary MC probability."""
+    capL=cap_level(capacity(b))[0]; tolL=tol_profile(ss)[1]; rec=rec_tier(capL,tolL)
+    rp,sd=TIER_M[rec]["rp"],TIER_M[rec]["sd"]
+    surplus=max(0,b["surplus"])+sf(ss["employer_contrib"])
+    T=goal_target(ss); years=int(sf(ss["goal_years"]) or 1)
+    res=calculate_institutional_financial_health(
+        age=int(sf(ss["age"]) or 18),dependents=int(sf(ss["dependents"])),
+        monthly_income=b["income"],monthly_essentials=b["essential"],monthly_surplus=surplus,
+        current_savings=b["cash"],total_assets=sf(ss["total_assets"]),total_liabilities=sf(ss["total_liabilities"]),
+        debt_repayment=b["debt"],has_basic_insurance=bool(ss["has_insurance"]),
+        tax_advantaged_ratio=sf(ss["tax_adv_pct"])/100,target_goal_lump=T,years_to_goal=years,
+        portfolio_return_nominal=rp,inflation_rate=sf(ss["inflation"])/100,tax_drag_max=sf(ss["tax_drag_max"])/100)
+    actual_drag=sf(ss["tax_drag_max"])/100*(1-sf(ss["tax_adv_pct"])/100)
+    ga=goal_assess(b["cash"],surplus,rp,sd,T,years,sf(ss["inflation"])/100,actual_drag)
+    return res,ga,rec,capL,tolL,surplus,T,years
+
 def page_budget():
-    note("Enter your income, savings and expenses below — every metric recalculates live as you type.")
-    sec("Income, Savings &amp; Investments")
+    note("Enter your income, balance sheet and expenses below — every metric recalculates live as you type.")
+    sec("Income, Savings &amp; Balance Sheet")
     a=st.columns(3)
     a[0].number_input("Monthly after-tax income ($)",min_value=0,step=250,key="income_primary")
     a[1].number_input("Secondary income (optional)",min_value=0,step=100,key="income_secondary")
     a[2].number_input("Emergency cash savings ($)",min_value=0,step=1000,key="savings")
     c=st.columns(3)
-    c[0].number_input("Current invested assets ($)",min_value=0,step=1000,key="invested_assets",help="Money already invested toward your goal (super/401k, ETFs, shares). Separate from your emergency cash.")
-    c[1].number_input("Employer / retirement contribution ($/mo)",min_value=0,step=50,key="employer_contrib",help="Employer super / 401k match — counted as a monthly contribution toward your goal.")
-    c[2].number_input("Avg. interest rate on your debt (%)",min_value=0.0,max_value=40.0,step=0.5,key="debt_rate",help="High-interest debt (cards) hurts your Foundation score more than a low-rate mortgage.")
+    c[0].number_input("Total assets — investments, super, property ($)",min_value=0,step=5000,key="total_assets",help="Everything except your liquid emergency cash. Drives your net-worth / solvency pillar.")
+    c[1].number_input("Total liabilities — all debt principal ($)",min_value=0,step=5000,key="total_liabilities",help="Mortgage + student loans + card balances. Net worth = cash + assets − liabilities.")
+    c[2].number_input("Employer / retirement contribution ($/mo)",min_value=0,step=50,key="employer_contrib",help="Super / 401k match — added to your monthly contribution toward the goal.")
     sec("Your bills &amp; expenses")
     t1,_=st.columns([1,3])
     mode=t1.radio("Entry mode",["Enter Individually","Enter Total at Once"],index=0 if ss["entry_mode"]=="individual" else 1,label_visibility="collapsed")
@@ -336,6 +338,12 @@ def page_budget():
     g[1].markdown(mcard("Total Expenses",fmt(b["total"]),f"{b['total']/b['income']*100:.0f}% of income","#B7791F","#FBF3E2"),unsafe_allow_html=True)
     g[2].markdown(mcard("Monthly Surplus",(fmt(b["surplus"]) if b["surplus"]>=0 else "-"+fmt(-b["surplus"])),"Income − expenses",sc,sbg),unsafe_allow_html=True)
     g[3].markdown(mcard("Savings Rate",f"{b['sr']*100:.1f}%","Surplus / income",srC,srBg),unsafe_allow_html=True)
+    nw=b["cash"]+sf(ss["total_assets"])-sf(ss["total_liabilities"]); nwc="#16794D" if nw>=0 else "#C53929"
+    g2=st.columns(4)
+    g2[0].markdown(mcard("Net Worth",(fmt(nw) if nw>=0 else "-"+fmt(-nw)),"Cash + assets − debt",nwc,"#fff"),unsafe_allow_html=True)
+    g2[1].markdown(mcard("Liquid Cash",fmt(b["cash"]),"Emergency reserve","#0E7C7B","#DFF2F1"),unsafe_allow_html=True)
+    g2[2].markdown(mcard("Invested Assets",fmt(sf(ss["total_assets"])),"Super / ETFs / property","#16794D","#E7F5EC"),unsafe_allow_html=True)
+    g2[3].markdown(mcard("Total Debt",fmt(sf(ss["total_liabilities"])),"Outstanding principal","#C53929","#FBEAE7"),unsafe_allow_html=True)
     if ss["entry_mode"]=="individual" and b["cat_sums"]:
         sec("Where Your Money Goes")
         d1,d2=st.columns(2)
@@ -347,81 +355,86 @@ def page_budget():
         if b["runway"]<3: d2.markdown('<div class="note alert">Your emergency fund is below 3 months. This is the most important fix before investing.</div>',unsafe_allow_html=True)
         elif b["runway"]<6: d2.markdown('<div class="note warn">Aim for 6 months of essentials before investing.</div>',unsafe_allow_html=True)
         else: d2.markdown('<div class="note">Healthy buffer — solid foundation to invest from.</div>',unsafe_allow_html=True)
-        # ---- 50/30/20 as a DIAGNOSTIC only (not scored) ----
         sec("Budget Mix Diagnostic (50 / 30 / 20)")
         st.markdown('<div class="diag">A budgeting reference only — this does <b>not</b> affect your financial health score.</div>',unsafe_allow_html=True)
         nr=b["needs"]/b["income"]*100; wr=b["wants"]/b["income"]*100; sv=max(0,b["surplus"])/b["income"]*100
-        for name,val,ideal,hint in [("Needs",nr,50,"housing, food, transport, insurance, debt"),
-                                     ("Wants",wr,30,"dining, entertainment, shopping, travel"),
-                                     ("Savings",sv,20,"everything left over")]:
+        for name,val,ideal,hint in [("Needs",nr,50,"housing, food, transport, insurance, debt"),("Wants",wr,30,"dining, entertainment, shopping, travel"),("Savings",sv,20,"everything left over")]:
             ok=(val<=ideal+2) if name!="Savings" else (val>=ideal-2); clr="#16794D" if ok else "#B7791F"
-            st.markdown(f'<div class="rrow"><div class="top"><span class="name">{name}</span>'
-                        f'<span class="val" style="color:{clr}">{val:.0f}%<span class="id"> / {ideal}%</span></span></div>'
-                        f'<div class="hint">{hint}</div></div>',unsafe_allow_html=True)
+            st.markdown(f'<div class="rrow"><div class="top"><span class="name">{name}</span><span class="val" style="color:{clr}">{val:.0f}%<span class="id"> / {ideal}%</span></span></div><div class="hint">{hint}</div></div>',unsafe_allow_html=True)
 
 # ════════════════════════════ STEP 2 — FINANCIAL HEALTH ════════════════════════════
+def _bars(items):
+    out=""
+    for label,gv,mx in items:
+        p=gv/mx*100 if mx else 0; cc="#16794D" if p>=70 else("#B7791F" if p>=40 else "#C53929")
+        out+=f'<div class="brk"><div class="l"><span class="nm">{label}</span><span class="sc" style="color:{cc}">{gv:g}/{mx}</span></div><div class="bar"><i style="width:{p:.0f}%;background:{cc}"></i></div></div>'
+    return out
+
 def page_health():
     b=ss.get("budget") or compute_budget(ss)
     st.markdown('<div class="goalwrap"><div class="gt">Ultimate Goal</div>'
                 '<h3>Set your destination — health is measured against it</h3>'
-                '<div class="gsub">Your health blends how resilient you are now with the probability of reaching this goal.</div></div>',unsafe_allow_html=True)
+                '<div class="gsub">Health blends your resilience now (50) with your readiness to reach this goal (50).</div></div>',unsafe_allow_html=True)
     gm=st.radio("Goal type",["Target passive income","Target lump sum"],index=0 if ss["goal_mode"]=="income" else 1,horizontal=True,label_visibility="collapsed")
     ss["goal_mode"]="income" if gm=="Target passive income" else "lumpsum"
-    gc=st.columns(3)
+    gc=st.columns(2)
     if ss["goal_mode"]=="income": gc[0].number_input("Desired passive income ($/month, today's $)",min_value=0,step=250,key="goal_income")
     else: gc[0].number_input("Target lump sum ($, today's $)",min_value=0,step=10000,key="goal_lump")
     gc[1].number_input("Years until you want it",min_value=1,max_value=60,step=1,key="goal_years")
-    gc[2].selectbox("Protection & income stability",list(PROT_PTS),key="protection",
-                    help="Insurance cover and how secure/diversified your income is — part of your Foundation score.")
-    with st.expander("⚙ Assumptions (inflation, fees & tax)"):
+    sec("About You")
+    ac=st.columns(4)
+    ac[0].number_input("Age",min_value=18,max_value=90,step=1,key="age")
+    ac[1].number_input("Financial dependents",min_value=0,max_value=10,step=1,key="dependents",help="More dependents = a deeper emergency buffer is required (target rises from 6 to 9 months).")
+    ac[2].slider("Tax-advantaged share of investments (%)",0,100,key="tax_adv_pct",help="Super / 401k etc. A higher share cuts the tax drag on your returns.")
+    ac[3].checkbox("I have adequate insurance",key="has_insurance",help="Life / health / income protection — worth 15 resilience points.")
+    with st.expander("⚙ Assumptions (inflation & tax drag)"):
         e=st.columns(2)
-        e[0].number_input("Inflation (% per year)",min_value=0.0,max_value=10.0,step=0.1,key="inflation",help="Goal & projections are shown in today's purchasing power.")
-        e[1].number_input("Fees + tax drag (% per year)",min_value=0.0,max_value=3.0,step=0.1,key="drag",help="Subtracted from returns. ~0.2% index fund to ~1%+ active, plus tax.")
+        e[0].number_input("Inflation (% per year)",min_value=0.0,max_value=10.0,step=0.1,key="inflation",help="Goal & projections are in today's purchasing power.")
+        e[1].number_input("Max tax drag in retail accounts (% per year)",min_value=0.0,max_value=3.0,step=0.1,key="tax_drag_max",help="Reduced by your tax-advantaged share.")
 
     if b["income"]<=0:
-        note("Complete the Budget step first — your score is built from your income, savings, this goal and your assumptions.","warn"); return
+        note("Complete the Budget step first — your score is built from your income, balance sheet, this goal and your assumptions.","warn"); return
 
-    T=goal_target(ss); cap=capacity(b); capL,capW=cap_level(cap); tname,tolL,tscore=tol_profile(ss)
-    rec=rec_tier(capL,tolL); rp,sd=TIER_M[rec]["rp"],TIER_M[rec]["sd"]
-    Cm=max(0,b["surplus"])+sf(ss["employer_contrib"]); yrs=sf(ss["goal_years"]) or 1
-    ga=goal_assess(sf(ss["invested_assets"]),Cm,rp,sd,T,yrs,sf(ss["inflation"])/100,sf(ss["drag"])/100)
+    res,ga,rec,capL,tolL,surplus,T,years=assess_health(b)
+    total=res["total_score"]; rt,clr,bg=rating(total); bd=res["breakdown"]; dg=res["diagnostics"]; pj=res["projections"]
+    res_pts=bd["liquidity_elasticity"]+bd["savings_efficiency"]+bd["insurance_security"]
+    rdy_pts=bd["goal_trajectory"]+bd["solvency_leverage"]+bd["debt_risk"]
     readiness=round(ga["prob"]*100)
-    F,fparts=foundation_score(b,sf(ss["debt_rate"])/100,ss["protection"])
-    wf,wg=blend_weights(yrs); head=round(wf*F+wg*readiness); rt,clr,bg=rating(head)
 
     sec("Financial Health Score")
-    h1,h2=st.columns([1,1.05])
-    h1.markdown(f'<div class="card" style="padding:16px;text-align:center">{gauge(head,clr)}'
-                f'<div style="margin-top:2px"><span style="background:{bg};color:{clr};font-weight:700;font-size:.95rem;padding:5px 20px;border-radius:20px;display:inline-block">{rt}</span></div>'
-                f'<div style="font-size:.72rem;color:#64748B;margin-top:8px">Blend: {wf*100:.0f}% Foundation · {wg*100:.0f}% Goal-readiness</div></div>',unsafe_allow_html=True)
-    fclr="#16794D" if F>=70 else("#B7791F" if F>=45 else "#C53929"); gclr="#16794D" if readiness>=70 else("#B7791F" if readiness>=45 else "#C53929")
-    bars=""
-    for k,(gv,mx) in fparts.items():
-        p=gv/mx*100; cc="#16794D" if p>=70 else("#B7791F" if p>=40 else "#C53929")
-        bars+=f'<div class="brk"><div class="l"><span class="nm">{k}</span><span class="sc" style="color:{cc}">{gv}/{mx}</span></div><div class="bar"><i style="width:{p:.0f}%;background:{cc}"></i></div></div>'
-    h2.markdown(f'<div class="subscore"><div class="h"><span class="t">🛡 Foundation (resilience now)</span><span class="v" style="color:{fclr}">{F}/100</span></div>'
-                f'<div class="d">Emergency buffer, debt burden, savings rate & protection.</div></div>'
-                f'<div style="padding:2px 4px 0">{bars}</div>'
-                f'<div class="subscore" style="margin-top:6px"><div class="h"><span class="t">🎯 Goal-readiness (probability)</span><span class="v" style="color:{gclr}">{readiness}/100</span></div>'
-                f'<div class="d">A <b>{readiness}% chance</b> of reaching {fmt(T)} in {int(yrs)}y, in today\'s dollars, with the {rec} portfolio (net of fees, after inflation).</div></div>',unsafe_allow_html=True)
-    note(f"Your financial health is <b>{rt}</b> — a {wf*100:.0f}/{wg*100:.0f} blend of a <b>{F}</b> Foundation and a <b>{readiness}%</b> probability of reaching your goal.",
-         "good" if head>=65 else("warn" if head>=45 else "alert"))
+    h1,h2=st.columns([1,1.15])
+    h1.markdown(f'<div class="card" style="padding:16px;text-align:center">{gauge(total,clr)}'
+                f'<div style="margin-top:2px"><span style="background:{bg};color:{clr};font-weight:700;font-size:.95rem;padding:5px 20px;border-radius:20px;display:inline-block">{res["rating_category"]}</span></div>'
+                f'<div style="font-size:.72rem;color:#64748B;margin-top:8px">Resilience {res_pts:g}/50 · Readiness {rdy_pts:g}/50</div></div>',unsafe_allow_html=True)
+    resilience_bars=_bars([("Liquidity &amp; elasticity",bd["liquidity_elasticity"],20),("Savings efficiency",bd["savings_efficiency"],15),("Insurance &amp; security",bd["insurance_security"],15)])
+    readiness_bars=_bars([("Goal trajectory",bd["goal_trajectory"],30),("Solvency &amp; leverage",bd["solvency_leverage"],10),("Cash-flow debt risk",bd["debt_risk"],10)])
+    h2.markdown(f'<div class="subscore"><div class="h"><span class="t">🛡 Current Resilience</span><span class="v" style="color:#16794D">{res_pts:g}/50</span></div></div>{resilience_bars}'
+                f'<div class="subscore" style="margin-top:8px"><div class="h"><span class="t">🎯 Future Readiness</span><span class="v" style="color:#16794D">{rdy_pts:g}/50</span></div></div>{readiness_bars}',unsafe_allow_html=True)
+    note(f"Your financial health is <b>{rt}</b> — {res_pts:g}/50 resilience now and {rdy_pts:g}/50 readiness for your goal. Monte-Carlo cross-check: about a <b>{readiness}% chance</b> of reaching {fmt(T)} with the {rec} portfolio.",
+         "good" if total>=65 else("warn" if total>=45 else "alert"))
 
     sec("Where You Stand")
-    nowp=min(100,ga["now"]*100); projp=min(100,ga["med"]/T*100) if T>0 else 0
+    nowp=min(100,b["cash"]/T*100) if T>0 else 0; projp=min(100,pj["inflation_adjusted_fv"]/T*100) if T>0 else 0
+    nw=dg["net_worth"]
     st.markdown(f'<div class="goalwrap"><div class="gt">Progress to {fmt(T)} (today\'s $)</div>'
                 f'<div class="ptrack"><div class="pp" style="width:{projp}%"></div><div class="pn" style="width:{nowp}%"></div></div>'
-                f'<div class="plab"><span>Invested now: {ga["now"]*100:.1f}% ({fmt(sf(ss["invested_assets"]))})</span><span>Median projection in {int(yrs)}y: {fmt(ga["med"])}</span></div>'
+                f'<div class="plab"><span>Cash now: {nowp:.1f}%</span><span>Projected in {years}y: {fmt(pj["inflation_adjusted_fv"])} ({projp:.0f}%)</span></div>'
                 f'<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px">'
                 f'<div class="gstat"><div class="l">Goal target</div><div class="v">{fmt(T)}</div><div class="s">{("$%s/mo via 4%% rule"%format(int(sf(ss["goal_income"])),",")) if ss["goal_mode"]=="income" else "lump sum, today\'s $"}</div></div>'
                 f'<div class="gstat"><div class="l">Chance of success</div><div class="v">{readiness}%</div><div class="s">Monte Carlo, real terms</div></div>'
-                f'<div class="gstat"><div class="l">Median projection</div><div class="v">{fmt(ga["med"])}</div><div class="s">in {int(yrs)}y @ {ga["rr"]*100:.1f}% real</div></div>'
-                f'<div class="gstat"><div class="l">To stay on track</div><div class="v">{fmt(ga["req"])}/mo</div><div class="s">vs your {fmt(Cm)}/mo now</div></div>'
+                f'<div class="gstat"><div class="l">Projected value</div><div class="v">{fmt(pj["inflation_adjusted_fv"])}</div><div class="s">@ {dg["real_compounding_rate"]*100:.1f}% real, after tax</div></div>'
+                f'<div class="gstat"><div class="l">To stay on track</div><div class="v">{fmt(pj["required_monthly_surplus"])}/mo</div><div class="s">vs your {fmt(surplus)}/mo now</div></div>'
                 f'</div></div>',unsafe_allow_html=True)
-    ytg=ga["ytg"]
-    if readiness>=70: note(f"On track — about a {readiness}% chance of reaching {fmt(T)}. At {fmt(Cm)}/mo your median path gets there in ~{ytg:.0f} years.","good")
-    elif np.isfinite(ytg): note(f"At {fmt(Cm)}/mo your median path reaches the goal in ~{ytg:.0f} years. To hit it in {int(yrs)}y with confidence, lift contributions toward {fmt(ga['req'])}/mo or choose a higher-return tier.","warn")
-    else: note(f"On the conservative {rec} portfolio this goal isn't reachable at your current saving. Raise contributions toward {fmt(ga['req'])}/mo, extend the horizon, or step up risk on the Forecast step.","alert")
+    sec("Solvency &amp; Assumptions")
+    dcol=st.columns(4)
+    nwc="#16794D" if nw>=dg["target_net_worth"] else("#B7791F" if nw>=0 else "#C53929")
+    dcol[0].markdown(mcard("Net Worth",(fmt(nw) if nw>=0 else "-"+fmt(-nw)),f"Age-target: {fmt(dg['target_net_worth'])}",nwc,"#fff"),unsafe_allow_html=True)
+    dcol[1].markdown(mcard("Real Return Used",f"{dg['real_compounding_rate']*100:.2f}%",f"{rec} tier, after inflation & tax","#0E7C7B","#DFF2F1"),unsafe_allow_html=True)
+    dcol[2].markdown(mcard("Actual Tax Drag",f"{dg['actual_tax_drag']*100:.2f}%",f"{int(sf(ss['tax_adv_pct']))}% tax-advantaged","#B7791F","#FBF3E2"),unsafe_allow_html=True)
+    dcol[3].markdown(mcard("Target Runway",f"{dg['target_runway_months']} months",f"{int(sf(ss['dependents']))} dependents","#16794D","#E7F5EC"),unsafe_allow_html=True)
+    if total>=80: note("Strong across both halves — resilient now and on track for your goal.","good")
+    elif rdy_pts<25: note(f"Your readiness is the weak half ({rdy_pts:g}/50). Lift contributions toward {fmt(pj['required_monthly_surplus'])}/mo, extend the horizon, or explore a higher-growth tier on the Portfolio step.","warn")
+    elif res_pts<30: note(f"Your resilience is the weak half ({res_pts:g}/50). Build your buffer, insurance and savings rate before adding market risk.","warn")
 
     sec("Risk Profile — 10 Questions")
     note("These set your comfort with volatility, which picks your suggested portfolio (and the return used above).")
@@ -431,10 +444,11 @@ def page_health():
                     f'<b style="font-size:.95rem">{q}</b></div>',unsafe_allow_html=True)
         st.radio(q,list(range(4)),format_func=lambda x,o=opts:o[x],key=f"quiz_q{i+1}",label_visibility="collapsed",horizontal=True)
     sec("Risk Analysis")
+    tname,tolL2,tscore=tol_profile(ss); capL2,capW=cap_level(capacity(b))
     r1,r2,r3=st.columns(3)
-    r1.markdown(mcard("Risk Tolerance",tname,f"Level {tolL}/5 · score {tscore}/40",TIER_CLR.get(rec,'#16794D'),"#E7F5EC"),unsafe_allow_html=True)
-    capclr=["#C53929","#C53929","#B7791F","#0E7C7B","#16794D"][capL-1]; capbg=["#FBEAE7","#FBEAE7","#FBF3E2","#DFF2F1","#E7F5EC"][capL-1]
-    r2.markdown(mcard("Risk Capacity",capW,f"Level {capL}/5 · from your budget",capclr,capbg),unsafe_allow_html=True)
+    r1.markdown(mcard("Risk Tolerance",tname,f"Level {tolL2}/5 · score {tscore}/40",TIER_CLR.get(rec,'#16794D'),"#E7F5EC"),unsafe_allow_html=True)
+    capclr=["#C53929","#C53929","#B7791F","#0E7C7B","#16794D"][capL2-1]; capbg=["#FBEAE7","#FBEAE7","#FBF3E2","#DFF2F1","#E7F5EC"][capL2-1]
+    r2.markdown(mcard("Risk Capacity",capW,f"Level {capL2}/5 · from your budget",capclr,capbg),unsafe_allow_html=True)
     r3.markdown(mcard("Suggested Tier",rec,"Prudent match (lower of the two)",TIER_CLR[rec],TIER_BG[rec]),unsafe_allow_html=True)
 
 # ════════════════════════════ STEP 3 — PORTFOLIO ════════════════════════════
@@ -472,119 +486,77 @@ def page_portfolio():
     st.markdown(f'<table class="cmp"><thead><tr><th>Tier</th><th>Exp. Return</th><th>Volatility</th><th>Sharpe</th><th>VaR 95%</th><th>CVaR 95%</th><th>Max DD</th></tr></thead><tbody>{rows}</tbody></table>'
                 '<div class="cmpnote"><b>VaR 95%</b>: in the worst 1-in-20 year, losses are expected to exceed this. <b>CVaR 95%</b>: average loss in those worst years. <b>Max DD</b>: estimated peak-to-trough fall. Long-run assumptions, not forecasts.</div>',unsafe_allow_html=True)
 
-# ════════════════════════════ STEP 4 — FORECAST ════════════════════════════
-def page_forecast():
-    note("Drag the sliders to build a custom portfolio. Metrics update using Modern Portfolio Theory.")
-    sec("Load a Preset")
-    pc=st.columns(5)
-    for i,t in enumerate(TIERS):
-        if pc[i].button(t,key=f"preset_{t}",type="secondary"):
-            for j in range(6): ss[f"w{j}"]=TIER_W[t][j]
-            st.rerun()
-    left,right=st.columns(2)
-    with left:
-        st.markdown('<div style="font-size:.68rem;font-weight:700;text-transform:uppercase;color:#64748B;margin-bottom:4px">Asset Allocation</div>',unsafe_allow_html=True)
-        for i,nm in enumerate(ASSETS):
-            st.slider(f"{nm}  ·  ret {R[i]*100:.1f}% / vol {V[i]*100:.0f}%",0,100,key=f"w{i}")
-        wsum=sum(int(ss[f"w{i}"]) for i in range(6))
-        st.markdown(f'<div style="display:flex;justify-content:space-between;font-weight:700;border-top:1px solid #E3E8EF;padding-top:10px;font-family:JetBrains Mono"><span>Total</span><span style="color:{"#16794D" if wsum==100 else "#C53929"}">{wsum}%</span></div>',unsafe_allow_html=True)
-    w=[int(ss[f"w{i}"]) for i in range(6)]; wn=[x/sum(w)*100 for x in w] if sum(w)>0 else w; m=metrics(wn)
-    with right:
-        lvl="Defensive" if m["sd"]<.05 else "Conservative" if m["sd"]<.085 else "Moderate" if m["sd"]<.125 else "Growth" if m["sd"]<.155 else "Aggressive"
-        st.markdown(f'<div class="metric" style="border-top-color:#F97316"><div class="ml">Portfolio Risk Level</div><div class="mv" style="color:#F97316">{lvl}</div><div class="ms">Volatility: {m["sd"]*100:.1f}% p.a.</div></div>',unsafe_allow_html=True)
-        q=st.columns(2)
-        q[0].markdown(mcard("Exp. Return",f"{m['rp']*100:.1f}%","Per year","#16794D","#E7F5EC"),unsafe_allow_html=True)
-        q[0].markdown(mcard("VaR 95%",f"{m['var95']*100:.1f}%","Worst 1-in-20 year","#C53929","#FBEAE7"),unsafe_allow_html=True)
-        q[1].markdown(mcard("Sharpe Ratio",f"{m['sharpe']:.2f}","Risk-adjusted return","#0E7C7B","#DFF2F1"),unsafe_allow_html=True)
-        q[1].markdown(mcard("Max Drawdown",f"{m['maxdd']*100:.0f}%","Est. peak-to-trough","#B7791F","#FBF3E2"),unsafe_allow_html=True)
-        segs=[(ASSETS[i],w[i],ASSET_CLR[i]) for i in range(6) if w[i]>0]
-        st.markdown(f'<div class="card" style="padding:14px;margin-top:10px">{donut(segs,str(sum(w))+"%")}{legend(segs)}</div>',unsafe_allow_html=True)
-    P=10000
-    sec("1-Year Outcome Scenarios (on $10,000 invested)")
-    s1=st.columns(3)
-    for col,(lab,val,clr) in zip(s1,[("BEAR (−2σ)",P*(1+m["rp"]-2*m["sd"]),"#C53929"),("BASE",P*(1+m["rp"]),"#16794D"),("BULL (+1σ)",P*(1+m["rp"]+m["sd"]),"#16794D")]):
-        d=val-P; dc="#16794D" if d>=0 else "#C53929"
-        col.markdown(f'<div class="scen" style="border-top-color:{clr}"><div class="sl">{lab}</div><div class="sv" style="color:{clr}">{fmt(val)}</div><div class="sd" style="color:{dc}">{"+" if d>=0 else "−"}{fmt(abs(d))} ({d/P*100:+.1f}%)</div></div>',unsafe_allow_html=True)
-    sec("5-Year Projection (on $10,000 invested)")
-    s5=st.columns(3)
-    for col,(lab,val,clr) in zip(s5,[("WORST",P*(1+m["rp"]-Z*m["sd"])**5,"#C53929"),("EXPECTED",P*(1+m["rp"])**5,"#0E7C7B"),("BEST",P*(1+m["rp"]+m["sd"])**5,"#16794D")]):
-        col.markdown(f'<div class="scen" style="border-top-color:{clr}"><div class="sl">{lab}</div><div class="sv" style="color:{"#16794D" if val>=P else "#C53929"}">{fmt(val)}</div><div class="sd">{(val/P-1)*100:+.0f}% total</div></div>',unsafe_allow_html=True)
-    note("Projections use long-run capital-market assumptions and are <b>estimates, not guarantees</b>. Figures are before taxes and fees.","warn")
-    b=ss.get("budget") or compute_budget(ss); T=goal_target(ss); yrs=sf(ss["goal_years"]) or 1
-    Cm=max(0,b["surplus"])+sf(ss["employer_contrib"])
-    ga=goal_assess(sf(ss["invested_assets"]),Cm,m["rp"],m["sd"],T,yrs,sf(ss["inflation"])/100,sf(ss["drag"])/100)
-    projp=min(100,ga["med"]/T*100) if T>0 else 0
-    sec("Reaching Your Ultimate Goal With This Portfolio")
-    st.markdown(f'<div class="goalwrap"><div class="gt">Progress to {fmt(T)} (real, net of fees)</div>'
-                f'<div class="ptrack"><div class="pp" style="width:{projp}%"></div></div>'
-                f'<div class="plab"><span>This portfolio · {round(ga["prob"]*100)}% chance of success</span><span>Median in {int(yrs)}y: {fmt(ga["med"])} ({projp:.0f}%)</span></div></div>',unsafe_allow_html=True)
+# ════════════════════════════ STEP 4 — MARKETS (markets.py) ════════════════════════════
 
 # ════════════════════════════ STEP 5 — ACTIONS ════════════════════════════
-def build_recs(b,head,readiness,F,capL,capW,tolL,tname,rec,ga,T,yrs):
-    recs=[]
-    if b["runway"]<3:
-        tgt=b["essential"]*6
-        recs.append(("alert","Build your emergency fund first",
-            f"You have {b['runway']:.1f} months of essentials saved. Aim for 6 (~{fmt(tgt)}) before taking market risk." ))
-    elif b["runway"]<6:
-        recs.append(("warn","Top up your emergency fund",f"You have {b['runway']:.1f} months. Building to 6 gives a full buffer before investing."))
+def build_recs(b,res,ga,rec,capW,tname,tolL,capL,T,years):
+    bd=res["breakdown"]; dg=res["diagnostics"]; pj=res["projections"]; recs=[]
+    if bd["liquidity_elasticity"]<bd_max(20)*0.5:
+        recs.append(("alert","Build your emergency fund first",f"You are below half of your {dg['target_runway_months']}-month target. Aim for {fmt(b['essential']*dg['target_runway_months'])} in cash before taking market risk."))
+    elif bd["liquidity_elasticity"]<20:
+        recs.append(("warn","Top up your emergency fund",f"Build toward {dg['target_runway_months']} months ({fmt(b['essential']*dg['target_runway_months'])}) for a full buffer."))
+    if bd["insurance_security"]==0:
+        recs.append(("warn","Add basic protection",f"Without adequate life/health/income insurance you forfeit 15 resilience points — one shock can undo years of progress."))
     if b["sr"]<0: recs.append(("alert","You are spending more than you earn",f"Expenses exceed income by {fmt(-b['surplus'])}/mo. No investment can outrun a monthly deficit."))
-    elif b["sr"]<0.10: recs.append(("warn","Lift your savings rate",f"You are saving {b['sr']*100:.0f}% of income. Reaching 20% ({fmt(b['income']*0.20)}/mo) sharply raises your goal-readiness."))
-    if b["dti"]>0.20 and sf(ss["debt_rate"])>=10: recs.append(("alert","Clear high-interest debt first",f"Your debt averages {sf(ss['debt_rate']):.0f}% — paying it down is a guaranteed return that beats most portfolios."))
-    elif b["dti"]>0.30: recs.append(("warn","Debt load is elevated",f"Debt repayments are {b['dti']*100:.0f}% of income (lending norms cap near 36%)."))
-    if ss["protection"]=="Minimal or unstable": recs.append(("warn","Shore up your safety net",f"Without adequate insurance or stable income, one shock can undo years of progress — this caps your Foundation score."))
-    if readiness<40 and b["income"]>0:
-        recs.append(("alert" if readiness<20 else "warn","Your goal needs more fuel",
-            f"Only a {readiness}% chance of reaching {fmt(T)} in {int(yrs)}y. Lift contributions toward {fmt(ga['req'])}/mo, extend the horizon, or raise risk to close the gap."))
+    elif bd["savings_efficiency"]<7.5: recs.append(("warn","Lift your savings rate",f"You are saving {b['sr']*100:.0f}% of income. Reaching 25% sharply raises both halves of your score."))
+    if bd["debt_risk"]<5: recs.append(("alert","Reduce your debt service",f"Debt repayments are {b['dti']*100:.0f}% of income (lending norms cap near 36%). Bringing this under 20% restores full marks here."))
+    elif bd["debt_risk"]<10: recs.append(("warn","Watch your debt load",f"Debt service is {b['dti']*100:.0f}% of income — keep it under 20%."))
+    if dg["net_worth"]<0: recs.append(("alert","Your net worth is negative",f"Liabilities exceed assets by {fmt(-dg['net_worth'])}. Paying down principal is a guaranteed return and lifts your solvency score."))
+    elif bd["solvency_leverage"]<5: recs.append(("info","Build toward your net-worth target",f"Your age-based target is {fmt(dg['target_net_worth'])}. You're at {fmt(dg['net_worth'])} — grow assets and trim debt to close it."))
+    if bd["goal_trajectory"]<15: recs.append(("alert","Your goal needs more fuel",f"Only a {round(ga['prob']*100)}% chance of reaching {fmt(T)} in {years}y. Lift contributions toward {fmt(pj['required_monthly_surplus'])}/mo, extend the horizon, or consider a higher-growth tier."))
+    elif bd["goal_trajectory"]<25: recs.append(("warn","Goal is slightly behind",f"Projected to cover {min(999,pj['inflation_adjusted_fv']/T*100):.0f}% of {fmt(T)}. A small contribution increase closes the gap."))
     gd=tolL-capL
     if gd>=2: recs.append(("alert","Do not invest beyond your capacity",f"Your comfort with risk ({tname}) exceeds what your finances support ({capW}). Start at {rec}."))
     elif gd<=-2: recs.append(("info","You can afford more growth when ready",f"Your finances ({capW}) could support more risk than your current comfort ({tname}). Increase exposure gradually."))
-    if F>=70 and readiness>=70: recs.append(("good","You are positioned to invest toward your goal",f"Strong foundation and a {readiness}% chance of success. Consider {fmt(max(0,b['surplus']))}/mo automated into {rec}."))
+    if res["total_score"]>=80 and bd["goal_trajectory"]>=25: recs.append(("good","You are positioned to invest toward your goal",f"Strong on both halves. Consider {fmt(max(0,b['surplus']))}/mo automated into {rec}."))
     if not any(k in("alert","warn") for k,_,_ in recs): recs.append(("good","You are on a healthy path to your goal","No critical issues. Keep contributing consistently and review quarterly."))
     recs.sort(key=lambda r:{"alert":0,"warn":1,"info":2,"good":3}[r[0]]); return recs
 
+def bd_max(x): return x  # readability helper
+
 def calculation_notes():
-    return """**How financial health is calculated (the realistic model)**
+    return """**Institutional Financial Health Score (out of 100)** — a Weighted Hybrid Model split evenly between **Current Resilience (50)** and **Future Readiness (50)**.
 
-The headline score is a **life-stage-weighted blend** of two independent sub-scores:
+**① Current Resilience (50)**
+• *Liquidity & elasticity (20)* = min(1, runway ÷ target) · 20, where runway = cash ÷ monthly essentials. The target is **6 months, rising to 9 if you have any dependents** (lower budget elasticity needs a deeper buffer).
+• *Savings efficiency (15)* = min(1, savings-rate ÷ 25%) · 15.
+• *Insurance & security (15)* = 15 if you hold adequate life/health/income cover, else 0.
 
-`Headline = w_F · Foundation + w_G · Goal-readiness`, where the goal weight
-`w_G = clamp(0.65 − 0.01·years, 0.40, 0.60)` — nearer goals lean on readiness, distant goals on foundation.
+**② Future Readiness (50)**
+• *Goal trajectory with tax friction (30)* = min(1, FV ÷ target) · 30.
+  – Actual tax drag = max tax drag · (1 − tax-advantaged share) — holding more in super/401k cuts the drag.
+  – Net return = nominal − actual tax drag; Real rate = (1+net)/(1+inflation) − 1.
+  – FV = cash·(1+i)ᵐ + surplus·(((1+i)ᵐ−1)/i), i = real/12, m = years·12 (today's dollars).
+• *Solvency & leverage (10)* = min(1, NW-ratio ÷ target) · 10, NW = cash + assets − liabilities, NW-ratio = NW ÷ annual income. **Age-based target = age/10 − 1** (age 30 → 2×, age 50 → 4× income). Negative net worth scores 0.
+• *Cash-flow debt risk (10)* = 10 if DTI ≤ 20%, tapering linearly to 0 at DTI = 40%.
 
-**① Foundation — resilience right now (0–100)**
-• Emergency runway (35) = min(1, runway ÷ 6) · 35
-• Debt burden (25) = starts from 25·(1 − min(1, DTI ÷ 36%)); the shortfall is then *amplified* when your average debt rate exceeds 8% (×up to 2.5) — so a 20% card hurts far more than a 3% mortgage.
-• Savings rate (25) = min(1, savings-rate ÷ 20%) · 25
-• Protection & stability (15) = 15 well-protected / 8 partly / 0 minimal.
+**Rating:** Critical <25 · At Risk 25–44 · Fair 45–64 · Good 65–79 · Excellent ≥80.
 
-**② Goal-readiness — probability of reaching your goal (0–100)**
-A Monte Carlo simulation (4,000 paths, monthly steps) projects your invested assets plus
-monthly contributions (including employer/super) and returns the **probability of reaching
-the target**. Everything is in **real, today's-dollar terms**:
-• Net return = tier expected return − fees/tax drag; Real return = (1+net)/(1+inflation) − 1
-• Target from passive income = annual income ÷ 4% safe-withdrawal rate (already in today's $)
-• The portfolio used is your *suggested* tier (capacity + tolerance). Readiness = % of paths ≥ target.
+**Complementary realism check.** Alongside the deterministic trajectory above, a Monte-Carlo
+simulation (4,000 real-terms paths) reports your **probability of actually reaching the goal** —
+shown as "chance of success" — because a single projected line hides volatility risk.
 
-**Supporting figures**
-• Required monthly C* = (T − S₀·(1+i)ᵐ)·i ÷ ((1+i)ᵐ−1), i = real-rate/12, m = years·12
-• Years to goal = ln((T + C/i)/(S₀ + C/i)) ÷ ln(1+i) ÷ 12
-• Portfolio metrics (MPT): Rp = Σwᵢrᵢ; σ = √(wᵀΣw); Sharpe = (Rp−Rf)/σ;
-  VaR₉₅ = max(0, 1.645σ − Rp); CVaR₉₅ = max(0, σ·φ(1.645)/0.05 − Rp); MaxDD ≈ min(95%, 2.4σ).
+**The 50/30/20 rule is not scored** — it appears on the Budget step purely as a spending-mix diagnostic."""
 
-**The 50/30/20 rule is not scored** — it is shown on the Budget step purely as a spending-mix
-diagnostic, because a balanced budget doesn't tell you whether you can withstand a shock or
-reach your goal. Resilience and trajectory do."""
-
-def report_text(b,head,F,readiness,rt,capW,tname,rec,recs,T,ga,yrs):
+def report_text(b,res,ga,rec,capW,tname,T,years):
+    bd=res["breakdown"]; dg=res["diagnostics"]; pj=res["projections"]
     L=["SERALUNG FINANCE — PERSONAL FINANCIAL REPORT","="*52,"","Educational only. Not personal financial advice.","",
-       "FINANCIAL HEALTH (goal-based blend)","-"*52,f"  Headline:         {head}/100 ({rt})",f"  Foundation:       {F}/100",f"  Goal-readiness:   {readiness}/100  ({readiness}% chance of success)","",
-       "ULTIMATE GOAL","-"*52,f"  Target:           {fmt(T)} (today's $)",f"  Median projection:{fmt(ga['med'])} in {yrs:g}y @ {ga['rr']*100:.1f}% real",f"  Required:         {fmt(ga['req'])}/mo on the expected path","",
-       "MONTHLY CASH FLOW","-"*52,f"  Income:           {fmt(b['income'])}",f"  Expenses:         {fmt(b['total'])}",f"  Surplus:          {fmt(b['surplus'])}",f"  Savings rate:     {b['sr']*100:.1f}%","",
-       "RESILIENCE","-"*52,f"  Emergency runway: {b['runway']:.1f} months",f"  Invested assets:  {fmt(sf(ss['invested_assets']))}",f"  Debt service:     {b['dti']*100:.0f}% of income","",
+       "FINANCIAL HEALTH (institutional hybrid)","-"*52,f"  Total score:      {res['total_score']}/100 ({res['rating_category']})",
+       f"  Resilience:       {bd['liquidity_elasticity']+bd['savings_efficiency']+bd['insurance_security']:g}/50",
+       f"  Readiness:        {bd['goal_trajectory']+bd['solvency_leverage']+bd['debt_risk']:g}/50",
+       f"  Chance of goal:   {round(ga['prob']*100)}% (Monte Carlo, real terms)","",
+       "BREAKDOWN","-"*52,f"  Liquidity (20):   {bd['liquidity_elasticity']:g}",f"  Savings (15):     {bd['savings_efficiency']:g}",
+       f"  Insurance (15):   {bd['insurance_security']:g}",f"  Trajectory (30):  {bd['goal_trajectory']:g}",
+       f"  Solvency (10):    {bd['solvency_leverage']:g}",f"  Debt risk (10):   {bd['debt_risk']:g}","",
+       "ULTIMATE GOAL","-"*52,f"  Target:           {fmt(T)} (today's $)",f"  Projected FV:     {fmt(pj['inflation_adjusted_fv'])} @ {dg['real_compounding_rate']*100:.1f}% real",
+       f"  Gap:              {fmt(pj['target_gap'])}",f"  Required:         {fmt(pj['required_monthly_surplus'])}/mo","",
+       "BALANCE SHEET","-"*52,f"  Net worth:        {fmt(dg['net_worth'])}",f"  Age-based target: {fmt(dg['target_net_worth'])}",
+       f"  Liquid cash:      {fmt(b['cash'])}",f"  Monthly surplus:  {fmt(b['surplus'])}","",
        "RISK PROFILE","-"*52,f"  Tolerance:        {tname}",f"  Capacity:         {capW}",f"  Suggested tier:   {rec}","","PRIORITISED ACTIONS","-"*52]
+    recs=ss.get("_recs",[])
     tg={"alert":"[DO FIRST] ","warn":"[IMPORTANT] ","info":"[CONSIDER] ","good":"[ON TRACK] "}
-    for i,(k,t,d) in enumerate(recs,1):
-        L.append(f"  {i}. {tg[k]}{t}"); cur=""
+    for idx,(k,t,d) in enumerate(recs,1):
+        L.append(f"  {idx}. {tg[k]}{t}"); cur=""
         for wd in d.split():
             if len(cur)+len(wd)+1>66: L.append("     "+cur); cur=wd
             else: cur=(cur+" "+wd).strip()
@@ -594,30 +566,28 @@ def report_text(b,head,F,readiness,rt,capW,tname,rec,recs,T,ga,yrs):
 
 def page_actions():
     b=ss.get("budget") or compute_budget(ss)
-    T=goal_target(ss); capL,capW=cap_level(capacity(b)); tname,tolL,_=tol_profile(ss); rec=rec_tier(capL,tolL)
-    rp,sd=TIER_M[rec]["rp"],TIER_M[rec]["sd"]; yrs=sf(ss["goal_years"]) or 1
-    Cm=max(0,b["surplus"])+sf(ss["employer_contrib"])
-    ga=goal_assess(sf(ss["invested_assets"]),Cm,rp,sd,T,yrs,sf(ss["inflation"])/100,sf(ss["drag"])/100)
-    readiness=round(ga["prob"]*100); F,_=foundation_score(b,sf(ss["debt_rate"])/100,ss["protection"])
-    wf,wg=blend_weights(yrs); head=round(wf*F+wg*readiness); rt,_,_=rating(head)
-    recs=build_recs(b,head,readiness,F,capL,capW,tolL,tname,rec,ga,T,yrs)
-    nA=sum(1 for r in recs if r[0]=="alert"); nW=sum(1 for r in recs if r[0]=="warn")
-    rdg,rclr,rbg=rating(head); recClr=TIER_CLR.get(rec,"#16794D")
+    if b["income"]<=0: note("Complete the Budget and Financial Health steps to generate your plan.","warn"); return
+    res,ga,rec,capL,tolL,surplus,T,years=assess_health(b)
+    tname=tol_profile(ss)[0]; capW=cap_level(capacity(b))[1]; total=res["total_score"]
+    rt,rclr,rbg=rating(total)
+    recs=build_recs(b,res,ga,rec,capW,tname,tolL,capL,T,years); ss["_recs"]=recs
+    nA=sum(1 for r in recs if r[0]=="alert"); nW=sum(1 for r in recs if r[0]=="warn"); recClr=TIER_CLR.get(rec,"#16794D")
+    res_pts=res["breakdown"]["liquidity_elasticity"]+res["breakdown"]["savings_efficiency"]+res["breakdown"]["insurance_security"]
+    rdy_pts=res["breakdown"]["goal_trajectory"]+res["breakdown"]["solvency_leverage"]+res["breakdown"]["debt_risk"]
     sec("Investment Readiness")
     a1,a2=st.columns(2)
-    a1.markdown(f'<div class="card" style="padding:16px">{gauge(head,rclr)}</div>',unsafe_allow_html=True)
+    a1.markdown(f'<div class="card" style="padding:16px">{gauge(total,rclr)}</div>',unsafe_allow_html=True)
     a2.markdown(f'<div class="readwrap" style="border-left-color:{rclr};background:{rbg}"><div class="ov">Overall</div>'
-                f'<div class="rt" style="color:{rclr}">{rdg}</div><div class="rd">{nA} critical item{"s" if nA!=1 else ""} and {nW} to watch. '
-                f'Foundation <b>{F}</b>, goal-readiness <b>{readiness}%</b>. Suggested portfolio: <b style="color:{recClr}">{rec}</b>.</div></div>',unsafe_allow_html=True)
+                f'<div class="rt" style="color:{rclr}">{res["rating_category"]}</div><div class="rd">{nA} critical item{"s" if nA!=1 else ""} and {nW} to watch. '
+                f'Resilience {res_pts:g}/50, readiness {rdy_pts:g}/50 ({round(ga["prob"]*100)}% chance). Suggested portfolio: <b style="color:{recClr}">{rec}</b>.</div></div>',unsafe_allow_html=True)
     sec("Your Prioritised Action Plan")
     cmap={"alert":("#FBEAE7","#C53929"),"warn":("#FBF3E2","#B7791F"),"info":("#E7F5EC","#16794D"),"good":("#E7F5EC","#16794D")}
     tmap={"alert":"Do first","warn":"Important","info":"Consider","good":"On track"}
-    for i,(k,t,d) in enumerate(recs,1):
+    for idx,(k,t,d) in enumerate(recs,1):
         bg2,ac=cmap[k]
-        st.markdown(f'<div class="action" style="border-left:3.5px solid {ac}"><div class="ah"><span class="num" style="background:{ac}">{i}</span>'
+        st.markdown(f'<div class="action" style="border-left:3.5px solid {ac}"><div class="ah"><span class="num" style="background:{ac}">{idx}</span>'
                     f'<span class="tag" style="background:{bg2};color:{ac}">{tmap[k]}</span><span class="at">{t}</span></div><div class="ad">{d}</div></div>',unsafe_allow_html=True)
-    st.download_button("⤓ Download My Financial Report (.txt)",
-        data=report_text(b,head,F,readiness,rt,capW,tname,rec,recs,T,ga,yrs),
+    st.download_button("⤓ Download My Financial Report (.txt)",data=report_text(b,res,ga,rec,capW,tname,T,years),
         file_name="seralung_finance_report.txt",mime="text/plain",use_container_width=True)
     with st.expander("📐 See the calculation details (every formula)"):
         st.markdown(calculation_notes())
@@ -635,7 +605,7 @@ def page_actions():
         if st.button("✓ Submit Feedback",disabled=ss["fb_rating"]==0): ss["fb_sent"]=True; st.rerun()
 
 # ════════════════════════════ DISPATCH + NAV ════════════════════════════
-{1:page_budget,2:page_health,3:page_portfolio,4:page_forecast,5:page_actions}[step]()
+{1:page_budget,2:page_health,3:page_portfolio,4:page_markets,5:page_actions}[step]()
 st.markdown('<div style="height:14px"></div>',unsafe_allow_html=True)
 segs="".join(f'<span style="width:42px;height:5px;border-radius:4px;background:{STEP_META[i][3] if i<step else "#E2E8F0"};display:inline-block;margin-right:7px"></span>' for i in range(5))
 nb1,nb2,nb3=st.columns([1,2,1])
