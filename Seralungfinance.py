@@ -271,13 +271,13 @@ for i,m in enumerate(STEP_META):
     if n<step: cls,inner="done",f'<div class="circle" style="background:{a};border-color:{a};color:#fff">✓</div>'
     elif n==step: cls,inner="active",f'<div class="circle" style="border-color:{a};color:{a};box-shadow:0 0 0 4px {a}33">{n}</div>'
     elif n<=ss["max_step"]: cls,inner="",f'<div class="circle">{n}</div>'
-    else: cls,inner="",'<div class="circle">🔒</div>'
+    else: cls,inner="",'<div class="circle">·</div>'
     lncol=a if n<step else "#E3E8EF"
     lbl=m[1].replace(" ","<br>",1) if m[1]=="Fin. Health" else m[1]
     nav+=f'<div class="snode {cls}"><div class="line" style="background:{lncol}"></div>{inner}<div class="lbl" style="{"color:"+a if n==step else ""}">{lbl}</div></div>'
 st.markdown(f'<div class="stepnav">{nav}</div>',unsafe_allow_html=True)
 cp='<span class="cp">✓ COMPLETE</span>' if step<ss["max_step"] else ""
-st.markdown(f'<div class="banner" style="background:{abg}"><div class="bi" style="background:{accent}">{meta[2]}</div>'
+st.markdown(f'<div class="banner" style="background:{abg}">'
             f'<div><span class="pl" style="background:{accent}">STEP {step} OF 5</span>{cp}<h2>{meta[5]}</h2><div class="sb">{meta[6]}</div></div></div>',unsafe_allow_html=True)
 
 def sec(l): st.markdown(f'<div class="sec"><span>{l}</span><div class="ln"></div></div>',unsafe_allow_html=True)
@@ -304,16 +304,14 @@ def assess_health(b):
     return res,ga,rec,capL,tolL,surplus,T,years
 
 def page_budget():
-    note("Enter your income, balance sheet and expenses below — every metric recalculates live as you type.")
-    sec("Income, Savings &amp; Balance Sheet")
-    a=st.columns(3)
+    sec("Income &amp; Balance Sheet")
+    a=st.columns(2)
     a[0].number_input("Monthly after-tax income ($)",min_value=0,step=250,key="income_primary")
-    a[1].number_input("Secondary income (optional)",min_value=0,step=100,key="income_secondary")
-    a[2].number_input("Emergency cash savings ($)",min_value=0,step=1000,key="savings")
+    a[1].number_input("Emergency cash savings ($)",min_value=0,step=1000,key="savings")
     c=st.columns(3)
-    c[0].number_input("Total assets — investments, super, property ($)",min_value=0,step=5000,key="total_assets",help="Everything except your liquid emergency cash. Drives your net-worth / solvency pillar.")
-    c[1].number_input("Total liabilities — all debt principal ($)",min_value=0,step=5000,key="total_liabilities",help="Mortgage + student loans + card balances. Net worth = cash + assets − liabilities.")
-    c[2].number_input("Employer / retirement contribution ($/mo)",min_value=0,step=50,key="employer_contrib",help="Super / 401k match — added to your monthly contribution toward the goal.")
+    c[0].number_input("Total assets ($)",min_value=0,step=5000,key="total_assets",help="Everything except your liquid emergency cash. Drives your net-worth / solvency pillar.")
+    c[1].number_input("Total liabilities ($)",min_value=0,step=5000,key="total_liabilities",help="Mortgage + student loans + card balances. Net worth = cash + assets − liabilities.")
+    c[2].number_input("Employer contribution ($/mo)",min_value=0,step=50,key="employer_contrib",help="Super / 401k match — added to your monthly contribution toward the goal.")
     sec("Your bills &amp; expenses")
     t1,_=st.columns([1,3])
     mode=t1.radio("Entry mode",["Enter Individually","Enter Total at Once"],index=0 if ss["entry_mode"]=="individual" else 1,label_visibility="collapsed")
@@ -321,7 +319,6 @@ def page_budget():
     if ss["entry_mode"]=="total":
         st.number_input("Total monthly expenses ($)",min_value=0,step=100,key="total_expenses")
     else:
-        st.caption("Edit any cell · use + below the table to add a row · select a row and press ⌫ to delete")
         ss["expenses_df"]=st.data_editor(ss["expenses_df"],num_rows="dynamic",use_container_width=True,key="exp_editor",
             column_config={"Expense":st.column_config.TextColumn("Expense",width="large"),
                 "Category":st.column_config.SelectboxColumn("Category",options=CATS,width="medium"),
@@ -330,18 +327,12 @@ def page_budget():
     if b["income"]<=0: note("Enter your monthly income above to see your budget analysis.","warn"); return
     sec("Budget Summary")
     sc="#16794D" if b["surplus"]>0 else "#C53929"; sbg="#E7F5EC" if b["surplus"]>0 else "#FBEAE7"
-    srC="#16794D" if b["sr"]>=.2 else("#B7791F" if b["sr"]>=.1 else "#C53929"); srBg="#E7F5EC" if b["sr"]>=.2 else("#FBF3E2" if b["sr"]>=.1 else "#FBEAE7")
+    nw=b["cash"]+sf(ss["total_assets"])-sf(ss["total_liabilities"]); nwc="#16794D" if nw>=0 else "#C53929"
     g=st.columns(4)
     g[0].markdown(mcard("Total Income",fmt(b["income"]),"Per month","#1E2A32"),unsafe_allow_html=True)
     g[1].markdown(mcard("Total Expenses",fmt(b["total"]),f"{b['total']/b['income']*100:.0f}% of income","#B7791F","#FBF3E2"),unsafe_allow_html=True)
-    g[2].markdown(mcard("Monthly Surplus",(fmt(b["surplus"]) if b["surplus"]>=0 else "-"+fmt(-b["surplus"])),"Income − expenses",sc,sbg),unsafe_allow_html=True)
-    g[3].markdown(mcard("Savings Rate",f"{b['sr']*100:.1f}%","Surplus / income",srC,srBg),unsafe_allow_html=True)
-    nw=b["cash"]+sf(ss["total_assets"])-sf(ss["total_liabilities"]); nwc="#16794D" if nw>=0 else "#C53929"
-    g2=st.columns(4)
-    g2[0].markdown(mcard("Net Worth",(fmt(nw) if nw>=0 else "-"+fmt(-nw)),"Cash + assets − debt",nwc,"#fff"),unsafe_allow_html=True)
-    g2[1].markdown(mcard("Liquid Cash",fmt(b["cash"]),"Emergency reserve","#0E7C7B","#DFF2F1"),unsafe_allow_html=True)
-    g2[2].markdown(mcard("Invested Assets",fmt(sf(ss["total_assets"])),"Super / ETFs / property","#16794D","#E7F5EC"),unsafe_allow_html=True)
-    g2[3].markdown(mcard("Total Debt",fmt(sf(ss["total_liabilities"])),"Outstanding principal","#C53929","#FBEAE7"),unsafe_allow_html=True)
+    g[2].markdown(mcard("Monthly Surplus",(fmt(b["surplus"]) if b["surplus"]>=0 else "-"+fmt(-b["surplus"])),f"Savings rate {max(0,b['sr'])*100:.0f}%",sc,sbg),unsafe_allow_html=True)
+    g[3].markdown(mcard("Net Worth",(fmt(nw) if nw>=0 else "-"+fmt(-nw)),"Cash + assets − debt",nwc),unsafe_allow_html=True)
     if ss["entry_mode"]=="individual" and b["cat_sums"]:
         sec("Where Your Money Goes")
         d1,d2=st.columns(2)
@@ -350,15 +341,7 @@ def page_budget():
         d1.markdown(f'<div class="card" style="padding:16px">{donut(segs,fmt(b["total"]))}{legend(segs)}</div>',unsafe_allow_html=True)
         rc="#16794D" if b["runway"]>=6 else("#B7791F" if b["runway"]>=3 else "#C53929"); rcb="#E7F5EC" if b["runway"]>=6 else("#FBF3E2" if b["runway"]>=3 else "#FBEAE7")
         d2.markdown(mcard("Emergency Fund Runway",f"{b['runway']:.1f} months",f"{fmt(b['cash'])} cash ÷ {fmt(b['essential'])}/mo essentials",rc,rcb),unsafe_allow_html=True)
-        if b["runway"]<3: d2.markdown('<div class="note alert">Your emergency fund is below 3 months. This is the most important fix before investing.</div>',unsafe_allow_html=True)
-        elif b["runway"]<6: d2.markdown('<div class="note warn">Aim for 6 months of essentials before investing.</div>',unsafe_allow_html=True)
-        else: d2.markdown('<div class="note">Healthy buffer — solid foundation to invest from.</div>',unsafe_allow_html=True)
-        sec("Budget Mix Diagnostic (50 / 30 / 20)")
-        st.markdown('<div class="diag">A budgeting reference only — this does <b>not</b> affect your financial health score.</div>',unsafe_allow_html=True)
-        nr=b["needs"]/b["income"]*100; wr=b["wants"]/b["income"]*100; sv=max(0,b["surplus"])/b["income"]*100
-        for name,val,ideal,hint in [("Needs",nr,50,"housing, food, transport, insurance, debt"),("Wants",wr,30,"dining, entertainment, shopping, travel"),("Savings",sv,20,"everything left over")]:
-            ok=(val<=ideal+2) if name!="Savings" else (val>=ideal-2); clr="#16794D" if ok else "#B7791F"
-            st.markdown(f'<div class="rrow"><div class="top"><span class="name">{name}</span><span class="val" style="color:{clr}">{val:.0f}%<span class="id"> / {ideal}%</span></span></div><div class="hint">{hint}</div></div>',unsafe_allow_html=True)
+        if b["runway"]<3: d2.markdown('<div class="note alert">Below 3 months — the most important fix before investing.</div>',unsafe_allow_html=True)
 
 # ════════════════════════════ STEP 2 — FINANCIAL HEALTH ════════════════════════════
 def _bars(items):
@@ -370,9 +353,7 @@ def _bars(items):
 
 def page_health():
     b=ss.get("budget") or compute_budget(ss)
-    st.markdown('<div class="goalwrap"><div class="gt">Ultimate Goal</div>'
-                '<h3>Set your destination — health is measured against it</h3>'
-                '<div class="gsub">Health blends your resilience now (50) with your readiness to reach this goal (50).</div></div>',unsafe_allow_html=True)
+    sec("Ultimate Goal")
     gm=st.radio("Goal type",["Target passive income","Target lump sum"],index=0 if ss["goal_mode"]=="income" else 1,horizontal=True,label_visibility="collapsed")
     ss["goal_mode"]="income" if gm=="Target passive income" else "lumpsum"
     gc=st.columns(2)
@@ -385,7 +366,7 @@ def page_health():
     ac[1].number_input("Financial dependents",min_value=0,max_value=10,step=1,key="dependents",help="More dependents = a deeper emergency buffer is required (target rises from 6 to 9 months).")
     ac[2].slider("Tax-advantaged share of investments (%)",0,100,key="tax_adv_pct",help="Super / 401k etc. A higher share cuts the tax drag on your returns.")
     ac[3].checkbox("I have adequate insurance",key="has_insurance",help="Life / health / income protection — worth 15 resilience points.")
-    with st.expander("⚙ Assumptions (inflation & tax drag)"):
+    with st.expander("Assumptions (inflation & tax drag)"):
         e=st.columns(2)
         e[0].number_input("Inflation (% per year)",min_value=0.0,max_value=10.0,step=0.1,key="inflation",help="Goal & projections are in today's purchasing power.")
         e[1].number_input("Max tax drag in retail accounts (% per year)",min_value=0.0,max_value=3.0,step=0.1,key="tax_drag_max",help="Reduced by your tax-advantaged share.")
@@ -403,14 +384,11 @@ def page_health():
     h1,h2=st.columns([1,1.15])
     h1.markdown(f'<div class="card" style="padding:16px;text-align:center">{gauge(total,clr)}'
                 f'<div style="margin-top:2px"><span style="background:{bg};color:{clr};font-weight:700;font-size:.95rem;padding:5px 20px;border-radius:20px;display:inline-block">{res["rating_category"]}</span></div>'
-                f'<div style="font-size:.72rem;color:#64748B;margin-top:8px">Resilience {res_pts:g}/50 · Readiness {rdy_pts:g}/50</div></div>',unsafe_allow_html=True)
+                f'</div>',unsafe_allow_html=True)
     resilience_bars=_bars([("Liquidity &amp; elasticity",bd["liquidity_elasticity"],20),("Savings efficiency",bd["savings_efficiency"],15),("Insurance &amp; security",bd["insurance_security"],15)])
     readiness_bars=_bars([("Goal trajectory",bd["goal_trajectory"],30),("Solvency &amp; leverage",bd["solvency_leverage"],10),("Cash-flow debt risk",bd["debt_risk"],10)])
-    h2.markdown(f'<div class="subscore"><div class="h"><span class="t">🛡 Current Resilience</span><span class="v" style="color:#16794D">{res_pts:g}/50</span></div></div>{resilience_bars}'
-                f'<div class="subscore" style="margin-top:8px"><div class="h"><span class="t">🎯 Future Readiness</span><span class="v" style="color:#16794D">{rdy_pts:g}/50</span></div></div>{readiness_bars}',unsafe_allow_html=True)
-    note(f"Your financial health is <b>{rt}</b> — {res_pts:g}/50 resilience now and {rdy_pts:g}/50 readiness for your goal. Monte-Carlo cross-check: about a <b>{readiness}% chance</b> of reaching {fmt(T)} with the {rec} portfolio.",
-         "good" if total>=65 else("warn" if total>=45 else "alert"))
-
+    h2.markdown(f'<div class="subscore"><div class="h"><span class="t">Current Resilience</span><span class="v" style="color:#16794D">{res_pts:g}/50</span></div></div>{resilience_bars}'
+                f'<div class="subscore" style="margin-top:8px"><div class="h"><span class="t">Future Readiness</span><span class="v" style="color:#16794D">{rdy_pts:g}/50</span></div></div>{readiness_bars}',unsafe_allow_html=True)
     sec("Where You Stand")
     nowp=min(100,b["cash"]/T*100) if T>0 else 0; projp=min(100,pj["inflation_adjusted_fv"]/T*100) if T>0 else 0
     nw=dg["net_worth"]
@@ -423,19 +401,7 @@ def page_health():
                 f'<div class="gstat"><div class="l">Projected value</div><div class="v">{fmt(pj["inflation_adjusted_fv"])}</div><div class="s">@ {dg["real_compounding_rate"]*100:.1f}% real, after tax</div></div>'
                 f'<div class="gstat"><div class="l">To stay on track</div><div class="v">{fmt(pj["required_monthly_surplus"])}/mo</div><div class="s">vs your {fmt(surplus)}/mo now</div></div>'
                 f'</div></div>',unsafe_allow_html=True)
-    sec("Solvency &amp; Assumptions")
-    dcol=st.columns(4)
-    nwc="#16794D" if nw>=dg["target_net_worth"] else("#B7791F" if nw>=0 else "#C53929")
-    dcol[0].markdown(mcard("Net Worth",(fmt(nw) if nw>=0 else "-"+fmt(-nw)),f"Age-target: {fmt(dg['target_net_worth'])}",nwc,"#fff"),unsafe_allow_html=True)
-    dcol[1].markdown(mcard("Real Return Used",f"{dg['real_compounding_rate']*100:.2f}%",f"{rec} tier, after inflation & tax","#0E7C7B","#DFF2F1"),unsafe_allow_html=True)
-    dcol[2].markdown(mcard("Actual Tax Drag",f"{dg['actual_tax_drag']*100:.2f}%",f"{int(sf(ss['tax_adv_pct']))}% tax-advantaged","#B7791F","#FBF3E2"),unsafe_allow_html=True)
-    dcol[3].markdown(mcard("Target Runway",f"{dg['target_runway_months']} months",f"{int(sf(ss['dependents']))} dependents","#16794D","#E7F5EC"),unsafe_allow_html=True)
-    if total>=80: note("Strong across both halves — resilient now and on track for your goal.","good")
-    elif rdy_pts<25: note(f"Your readiness is the weak half ({rdy_pts:g}/50). Lift contributions toward {fmt(pj['required_monthly_surplus'])}/mo, extend the horizon, or explore a higher-growth tier on the Portfolio step.","warn")
-    elif res_pts<30: note(f"Your resilience is the weak half ({res_pts:g}/50). Build your buffer, insurance and savings rate before adding market risk.","warn")
-
     sec("Risk Profile — 10 Questions")
-    note("These set your comfort with volatility, which picks your suggested portfolio (and the return used above).")
     for i,(q,opts) in enumerate(QUESTIONS):
         st.markdown(f'<div style="background:#fff;border:1px solid #E3E8EF;border-radius:14px;padding:12px 16px 4px;margin-bottom:6px;box-shadow:0 1px 3px rgba(0,0,0,.03)">'
                     f'<span style="background:#D6F1F7;color:#0E7490;font-size:.68rem;font-weight:700;padding:2px 8px;border-radius:5px;font-family:JetBrains Mono">{i+1:02d}/10</span> '
@@ -484,17 +450,7 @@ def page_portfolio():
     st.markdown(f'<table class="cmp"><thead><tr><th>Tier</th><th>Exp. Return</th><th>Volatility</th><th>Sharpe</th><th>VaR 95%</th><th>CVaR 95%</th><th>Max DD</th></tr></thead><tbody>{rows}</tbody></table>'
                 '<div class="cmpnote"><b>VaR 95%</b>: in the worst 1-in-20 year, losses are expected to exceed this. <b>CVaR 95%</b>: average loss in those worst years. <b>Max DD</b>: estimated peak-to-trough fall. Long-run assumptions, not forecasts.</div>',unsafe_allow_html=True)
 
-# ════════════════════════════ HEALTH ENGINE (inlined) ════════════════════════════
-"""
-health_engine.py
-================
-Institutional Financial Health Score (out of 100), using a Weighted Hybrid Model
-split evenly between Current Resilience (50) and Future Readiness (50).
-
-The single public entry point is ``calculate_institutional_financial_health``.
-It is pure (no I/O, no Streamlit) so it can be unit-tested and reused anywhere.
-"""
-
+# ═══════════════ HEALTH ENGINE (inlined; docstring stripped) ═══════════════
 from typing import Any, Dict
 
 
@@ -684,21 +640,7 @@ def calculate_institutional_financial_health(
     }
 
 
-# ════════════════════════════ STEP 4 — MARKET RESEARCH (inlined) ════════════════════════════
-"""
-markets.py — Market Research for Seralung Finance.
-
-Live US & Australian market data via the free ``yfinance`` library (Yahoo
-Finance, no API key). Quotes are typically delayed up to ~20 minutes.
-Segments: Stocks, ETFs, Real Estate (REITs), Bonds (bond ETFs — individual
-bonds don't trade with public tickers the way shares do).
-
-Top-5 lists are curated by market capitalisation / fund size, verified against
-public rankings in June 2026 — EXAMPLES TO EXPLORE, never buy recommendations.
-
-Set environment variable SERALUNG_DEMO=1 to run on deterministic synthetic
-data (no internet needed) — used for testing and offline demos.
-"""
+# ═══════════════ STEP 4 — MARKET RESEARCH (inlined; docstring stripped) ═══════════════
 import base64
 import os
 from typing import Optional
@@ -753,6 +695,14 @@ CODE2SYM = {"USD": "US$", "AUD": "A$", "GBP": "£", "GBp": "GBp ", "INR": "₹",
             "CAD": "C$", "EUR": "€", "JPY": "¥", "HKD": "HK$", "SGD": "S$",
             "NZD": "NZ$", "CHF": "CHF "}
 
+# Weighted multi-factor model for stocks/REITs (weights per the screener spec).
+STOCK_WEIGHTS = {"Return on equity": 0.12, "Return on assets": 0.10,
+                 "Gross margin": 0.08, "Operating margin": 0.10,
+                 "Revenue growth (yoy)": 0.12, "EPS growth (yoy)": 0.10,
+                 "P/E (trailing)": 0.10, "Price / Book": 0.06,
+                 "FCF yield": 0.10, "12-mo momentum": 0.07,
+                 "Analyst consensus": 0.05}        # sums to 1.00
+
 
 # ════════════════════════════ DATA ════════════════════════════
 def _demo_on() -> bool:
@@ -766,12 +716,13 @@ def _demo_series(symbol: str) -> pd.Series:
     return pd.Series(p, index=idx)
 
 
-_DEMO_INFO = {"trailingPE": 21.4, "forwardPE": 18.9, "trailingPegRatio": 1.4,
-              "priceToBook": 4.1, "enterpriseToEbitda": 13.2, "returnOnEquity": 0.24,
-              "profitMargins": 0.21, "operatingMargins": 0.27, "revenueGrowth": 0.09,
-              "earningsGrowth": 0.11, "freeCashflow": 8.4e9, "currentRatio": 1.8,
-              "debtToEquity": 92.0, "dividendYield": 0.021, "payoutRatio": 0.34,
-              "currency": "USD"}
+_DEMO_INFO = {"quoteType": "EQUITY", "trailingPE": 21.4, "forwardPE": 18.9,
+              "trailingPegRatio": 1.4, "priceToBook": 4.1, "enterpriseToEbitda": 13.2,
+              "returnOnEquity": 0.24, "returnOnAssets": 0.12, "grossMargins": 0.45,
+              "operatingMargins": 0.27, "profitMargins": 0.21, "revenueGrowth": 0.09,
+              "earningsGrowth": 0.11, "freeCashflow": 8.4e9, "marketCap": 2.4e11,
+              "currentRatio": 1.8, "debtToEquity": 92.0, "dividendYield": 0.021,
+              "payoutRatio": 0.34, "recommendationMean": 1.9, "currency": "USD"}
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -813,8 +764,8 @@ def stats_from_history(s: pd.Series) -> dict:
     lr = np.diff(np.log(np.clip(v, 1e-9, None)))
     vol = float(lr.std() * np.sqrt(252)) if lr.size > 1 else 0.0
     mu = float(lr.mean() * 252) if lr.size > 1 else 0.0
-    # Illustrative 1-yr range: ±1σ (lognormal) around a CLAMPED drift (|mu_c| ≤ σ/2)
-    # so uncertainty strictly dominates and the range brackets the current price.
+    # Illustrative range: ±1σ lognormal around drift clamped to ±σ/2 so
+    # uncertainty strictly dominates and the range brackets the current price.
     mu_c = float(np.clip(mu, -vol / 2.0, vol / 2.0))
     return {"last": last, "day": day, "yr": yr,
             "hi52": float(v.max()), "lo52": float(v.min()),
@@ -823,7 +774,19 @@ def stats_from_history(s: pd.Series) -> dict:
             "rng_hi": last * float(np.exp(mu_c + vol))}
 
 
-# ════════════════════ FUNDAMENTALS CHECKLIST ════════════════════
+def ytd_from_history(s: pd.Series) -> Optional[float]:
+    """Year-to-date return (%) from a daily series; None if not derivable."""
+    try:
+        start = pd.Timestamp(s.index[-1].year, 1, 1, tz=getattr(s.index, "tz", None))
+        ss = s[s.index >= start]
+        if len(ss) >= 2 and float(ss.iloc[0]) > 0:
+            return (float(ss.iloc[-1]) / float(ss.iloc[0]) - 1.0) * 100.0
+    except Exception:
+        pass
+    return None
+
+
+# ════════════════════ FACTOR MODELS ════════════════════
 def _f(info: dict, key: str) -> Optional[float]:
     v = info.get(key)
     try:
@@ -841,82 +804,180 @@ def _abbr(x: float) -> str:
     return f"{x:,.0f}"
 
 
-def fundamentals_rows(info: dict) -> dict:
-    """Pure: turn a yfinance .info dict into an evaluated checklist.
+def _low(v, good, warn):
+    return "na" if v is None else ("good" if v <= good else "warn" if v <= warn else "bad")
 
-    Returns {"rows":[{label,val,status,guide}], "passed":int, "rated":int}.
-    status in good/warn/bad/na/info. Handles known yfinance quirks:
-    debtToEquity is reported in PERCENT; dividendYield may arrive as a
-    fraction (0.021) or a percent (2.1) depending on version.
+
+def _high(v, good, warn):
+    return "na" if v is None else ("good" if v >= good else "warn" if v >= warn else "bad")
+
+
+def quality_filters(info: dict) -> list:
+    """Hard elimination filters per the screener spec."""
+    fails = []
+    de = _f(info, "debtToEquity")
+    if de is not None and de / 100.0 > 2.5:          # yfinance reports percent
+        fails.append(f"debt/equity {de/100:.1f} > 2.5")
+    om = _f(info, "operatingMargins")
+    if om is not None and om <= 0:
+        fails.append(f"operating margin {om*100:.1f}% ≤ 0")
+    pe = _f(info, "trailingPE")
+    if pe is not None and pe <= 0:
+        fails.append(f"P/E {pe:.1f} ≤ 0")
+    return fails
+
+
+def stock_rows(info: dict, momentum_pct: Optional[float] = None) -> dict:
+    """Evaluated stock/REIT checklist + weighted factor score (0-100).
+
+    Sub-scores good=1, warn=0.5, bad=0; N/A factors are dropped and the
+    spec weights are renormalised over what's available. Handles yfinance
+    quirks: debtToEquity arrives in PERCENT; dividendYield may be a
+    fraction (0.021) or a percent (2.1).
     """
     rows = []
 
     def add(label, val, status, guide):
         rows.append({"label": label, "val": val, "status": status, "guide": guide})
 
-    def low(v, good, warn):     # lower is better
-        return "na" if v is None else ("good" if v <= good else "warn" if v <= warn else "bad")
-
-    def high(v, good, warn):    # higher is better
-        return "na" if v is None else ("good" if v >= good else "warn" if v >= warn else "bad")
-
     pe = _f(info, "trailingPE")
     add("P/E (trailing)", f"{pe:.1f}" if pe is not None else "N/A",
-        low(pe, 25, 40), "≤25 guide — always compare to industry")
+        _low(pe, 25, 40), "≤25 guide — compare to industry")
     fpe = _f(info, "forwardPE")
     add("P/E (forward)", f"{fpe:.1f}" if fpe is not None else "N/A",
-        low(fpe, 22, 35), "what the market expects next year")
+        _low(fpe, 22, 35), "what the market expects next year")
     peg = _f(info, "trailingPegRatio")
     if peg is None:
         peg = _f(info, "pegRatio")
     add("PEG ratio", f"{peg:.2f}" if peg is not None else "N/A",
-        low(peg, 1.0, 2.0), "<1 cheap for its growth — estimate-driven")
+        _low(peg, 1.0, 2.0), "<1 cheap for its growth — estimate-driven")
     pb = _f(info, "priceToBook")
     add("Price / Book", f"{pb:.2f}" if pb is not None else "N/A",
-        low(pb, 3, 6), "asset-based lens; key for banks & REITs")
+        _low(pb, 3, 6), "asset lens; key for banks & REITs")
     ee = _f(info, "enterpriseToEbitda")
     add("EV / EBITDA", f"{ee:.1f}" if ee is not None else "N/A",
-        low(ee, 12, 18), "valuation including debt — robust across firms")
+        _low(ee, 12, 18), "valuation including debt")
 
-    roe = _f(info, "returnOnEquity")
-    roe = roe * 100 if roe is not None else None
+    roe = _f(info, "returnOnEquity"); roe = roe * 100 if roe is not None else None
     add("Return on equity", f"{roe:.1f}%" if roe is not None else "N/A",
-        high(roe, 15, 8), ">15% — check it isn't leverage-inflated")
-    pm = _f(info, "profitMargins")
-    pm = pm * 100 if pm is not None else None
+        _high(roe, 15, 8), ">15% — check it isn't leverage-inflated")
+    roa = _f(info, "returnOnAssets"); roa = roa * 100 if roa is not None else None
+    add("Return on assets", f"{roa:.1f}%" if roa is not None else "N/A",
+        _high(roa, 8, 4), "leverage-free cross-check on ROE")
+    gm = _f(info, "grossMargins"); gm = gm * 100 if gm is not None else None
+    add("Gross margin", f"{gm:.1f}%" if gm is not None else "N/A",
+        _high(gm, 40, 25), "pricing power before overheads")
+    om = _f(info, "operatingMargins"); om = om * 100 if om is not None else None
+    add("Operating margin", f"{om:.1f}%" if om is not None else "N/A",
+        _high(om, 15, 8), "core profitability; ≤0 fails the screen")
+    pm = _f(info, "profitMargins"); pm = pm * 100 if pm is not None else None
     add("Profit margin", f"{pm:.1f}%" if pm is not None else "N/A",
-        high(pm, 10, 5), "pricing power; watch the trend")
-    rg = _f(info, "revenueGrowth")
-    rg = rg * 100 if rg is not None else None
+        _high(pm, 10, 5), "bottom line after everything")
+    rg = _f(info, "revenueGrowth"); rg = rg * 100 if rg is not None else None
     add("Revenue growth (yoy)", f"{rg:+.1f}%" if rg is not None else "N/A",
-        high(rg, 5, 0), "is the business actually growing?")
-    fcf = _f(info, "freeCashflow")
-    add("Free cash flow", _abbr(fcf) if fcf is not None else "N/A",
-        "na" if fcf is None else ("good" if fcf > 0 else "bad"),
-        "cash is harder to fake than earnings")
+        _high(rg, 5, 0), "is the business growing?")
+    eg = _f(info, "earningsGrowth"); eg = eg * 100 if eg is not None else None
+    add("EPS growth (yoy)", f"{eg:+.1f}%" if eg is not None else "N/A",
+        _high(eg, 5, 0), "profits growing, not just sales")
+
+    fcf = _f(info, "freeCashflow"); mc = _f(info, "marketCap")
+    if fcf is not None and mc and mc > 0:
+        fy = fcf / mc * 100
+        add("FCF yield", f"{fy:.1f}%",
+            _high(fy, 4, 2), f"free cash ÷ market cap ({_abbr(fcf)} FCF) ")
+    else:
+        add("FCF yield", _abbr(fcf) + " FCF" if fcf is not None else "N/A",
+            "na" if fcf is None else ("good" if fcf > 0 else "bad"),
+            "cash is harder to fake than earnings ")
+
+    add("12-mo momentum", f"{momentum_pct:+.1f}%" if momentum_pct is not None else "N/A",
+        _high(momentum_pct, 10, 0), "trend can reverse — never chase alone")
+    rm = _f(info, "recommendationMean")
+    add("Analyst consensus", f"{rm:.1f}" if rm is not None else "N/A",
+        _low(rm, 2.2, 3.0), "1=strong buy, 5=sell — skews optimistic")
 
     cr = _f(info, "currentRatio")
     add("Current ratio", f"{cr:.2f}" if cr is not None else "N/A",
-        high(cr, 1.5, 1.0), ">1.5 guide — not meaningful for banks")
-    de = _f(info, "debtToEquity")
-    de = de / 100.0 if de is not None else None     # yfinance reports PERCENT
+        _high(cr, 1.5, 1.0), ">1.5 guide — not meaningful for banks")
+    de = _f(info, "debtToEquity"); de = de / 100.0 if de is not None else None
     add("Debt / equity", f"{de:.2f}" if de is not None else "N/A",
-        low(de, 1.5, 2.5), "<1.5 guide — banks run higher by design")
-
+        _low(de, 1.5, 2.5), "<1.5 guide — >2.5 fails the screen")
     dy = _f(info, "dividendYield")
-    if dy is not None and dy <= 0.25:               # fraction -> percent
+    if dy is not None and dy <= 0.25:                # fraction -> percent
         dy *= 100
     add("Dividend yield", f"{dy:.2f}%" if dy is not None else "N/A",
-        "info", "income — judge with the payout ratio below")
-    pr = _f(info, "payoutRatio")
-    pr = pr * 100 if pr is not None else None
+        "info", "income — judge with the payout ratio")
+    pr = _f(info, "payoutRatio"); pr = pr * 100 if pr is not None else None
     add("Payout ratio", f"{pr:.0f}%" if pr is not None else "N/A",
-        "na" if pr is None else low(pr, 80, 100),
+        "na" if pr is None else _low(pr, 80, 100),
         "<80% sustainable; ≥100% often precedes a cut")
 
     rated = [r for r in rows if r["status"] in ("good", "warn", "bad")]
     passed = sum(1 for r in rated if r["status"] == "good")
+    # weighted factor score over available weighted factors
+    sub = {"good": 1.0, "warn": 0.5, "bad": 0.0}
+    wsum = ssum = 0.0
+    for r in rows:
+        w = STOCK_WEIGHTS.get(r["label"])
+        if w and r["status"] in sub:
+            wsum += w; ssum += w * sub[r["status"]]
+    score = round(ssum / wsum * 100) if wsum > 0 else None
+    return {"rows": rows, "passed": passed, "rated": len(rated),
+            "score": score, "weight_cover": round(wsum, 2),
+            "fails": quality_filters(info)}
+
+
+def etf_rows(info: dict, ytd_pct: Optional[float] = None) -> dict:
+    """5-factor ETF checklist (expense, AUM, volume, YTD, beta)."""
+    rows = []
+
+    def add(label, val, status, guide):
+        rows.append({"label": label, "val": val, "status": status, "guide": guide})
+
+    er = _f(info, "netExpenseRatio")                 # newer key, already in %
+    if er is None:
+        er = _f(info, "annualReportExpenseRatio")    # older key, a fraction
+        er = er * 100 if er is not None else None
+    add("Expense ratio", f"{er:.2f}%" if er is not None else "N/A",
+        _low(er, 0.15, 0.40), "fees compound against you (data patchy)")
+    aum = _f(info, "totalAssets")
+    add("Fund assets (AUM)", _abbr(aum) if aum is not None else "N/A",
+        _high(aum, 10e9, 1e9), "scale = tighter spreads, lower closure risk")
+    av = _f(info, "averageVolume")
+    add("Avg daily volume", _abbr(av) if av is not None else "N/A",
+        _high(av, 1e6, 2e5), "liquidity — easy in, easy out")
+    add("YTD return", f"{ytd_pct:+.1f}%" if ytd_pct is not None else "N/A",
+        _high(ytd_pct, 5, 0), "short-window performance — context only")
+    bt = _f(info, "beta3Year")
+    if bt is None:
+        bt = _f(info, "beta")
+    add("Beta (vs market)", f"{bt:.2f}" if bt is not None else "N/A",
+        _low(bt, 1.1, 1.35), "sensitivity to market swings")
+
+    rated = [r for r in rows if r["status"] in ("good", "warn", "bad")]
+    passed = sum(1 for r in rated if r["status"] == "good")
     return {"rows": rows, "passed": passed, "rated": len(rated)}
+
+
+def is_fund(info: dict) -> bool:
+    qt = str(info.get("quoteType", "")).upper()
+    return qt in ("ETF", "MUTUALFUND") or (_f(info, "totalAssets") is not None
+                                           and _f(info, "trailingPE") is None)
+
+
+def rank_pool(pool, hist_loader, fund_loader):
+    """Rank (sym,name) pairs by the weighted factor score; ties by momentum."""
+    out = []
+    for sym, name in pool:
+        s = hist_loader(sym)
+        mom = stats_from_history(s)["yr"] * 100 if s is not None else None
+        info = fund_loader(sym)
+        res = stock_rows(info, mom) if info else {"score": None, "fails": []}
+        out.append({"sym": sym, "name": name, "score": res.get("score"),
+                    "mom": mom, "fails": res.get("fails", [])})
+    out.sort(key=lambda r: (-(r["score"] if r["score"] is not None else -1),
+                            -(r["mom"] if r["mom"] is not None else -1e9)))
+    return out
 
 
 # ════════════════════════════ SVG ════════════════════════════
@@ -1007,7 +1068,19 @@ _FTXT = {"good": "healthy", "warn": "borderline", "bad": "weak",
          "na": "no data", "info": "context"}
 
 
+def _render_rows(rows):
+    html = ""
+    for r in rows:
+        c = _FCLR[r["status"]]
+        html += (f'<div class="frow"><span class="fl">{r["label"]}</span>'
+                 f'<span class="fv">{r["val"]}</span>'
+                 f'<span class="fs" style="color:{c}">● {_FTXT[r["status"]]}</span>'
+                 f'<span class="fg">{r["guide"]}</span></div>')
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def page_markets():
+    ss = st.session_state
     st.markdown("""<style>
 .mktrow{background:#fff;border:1px solid #E3E8EF;border-radius:12px;padding:11px 16px;margin-bottom:7px;
   display:flex;align-items:center;gap:14px;box-shadow:0 1px 3px rgba(0,0,0,.03)}
@@ -1022,12 +1095,16 @@ def page_markets():
 .frow .fv{font-family:'JetBrains Mono',monospace;font-weight:700;font-size:.88rem;min-width:80px}
 .frow .fs{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;min-width:84px}
 .frow .fg{flex:2;font-size:.72rem;color:#64748B}
+.rankrow{background:#fff;border:1px solid #E3E8EF;border-radius:10px;padding:9px 14px;margin-bottom:6px;
+  display:flex;align-items:center;gap:12px;font-size:.86rem;flex-wrap:wrap}
+.rankrow .rn{background:#7C3AED;color:#fff;font-weight:800;width:24px;height:24px;border-radius:8px;
+  display:inline-flex;align-items:center;justify-content:center;font-size:.78rem;flex-shrink:0}
+.rankrow .rs{font-family:'JetBrains Mono',monospace;font-weight:700}
 @media(max-width:700px){.mktrow{flex-wrap:wrap}.mktrow .mspark{flex:1 1 100%}}
 </style>""", unsafe_allow_html=True)
 
-    _note("Live market data from Yahoo Finance (free — quotes are typically delayed up to "
-          "~20 minutes depending on the exchange). Educational reference only, <b>not</b> a "
-          "recommendation to buy or sell anything.")
+    _note("Yahoo Finance data (free, quotes delayed ~20 min). Educational reference — "
+          "<b>not</b> buy or sell advice.")
     if not YF_OK and not _demo_on():
         _note("The <b>yfinance</b> package is not installed — add <code>yfinance</code> to "
               "requirements.txt and reboot the app.", "alert")
@@ -1043,9 +1120,9 @@ def page_markets():
 
     _sec(f"Top 5 — {country} · {seg}")
     extra = cdef.get("note", {}).get(seg, "")
-    st.markdown(f'<div class="diag">Curated by market size &amp; fund assets (verified June '
-                f'2026) — examples to explore, <b>not</b> buy recommendations.'
-                f'{" " + extra if extra else ""}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="diag">Curated by market size (verified June 2026) — examples, '
+                f'<b>not</b> recommendations.{" " + extra if extra else ""}</div>',
+                unsafe_allow_html=True)
     data = {}
     with st.spinner("Fetching live prices…"):
         for sym, name in cdef[seg]:
@@ -1057,13 +1134,36 @@ def page_markets():
               "servers). Wait a minute and press <b>Refresh data</b> below — or run the app "
               "locally.", "warn")
 
+    # weighted ranking of the visible five (stocks & REITs only — funds lack these factors)
+    if seg in ("Stocks", "Real Estate"):
+        rk = f"ranked_{country}_{seg}"
+        if st.button("Rank these 5 by factor score", key=f"rankbtn_{country}_{seg}",
+                     type="secondary"):
+            ss[rk] = True
+        if ss.get(rk):
+            with st.spinner("Scoring all five…"):
+                ranked = rank_pool(cdef[seg], load_history, load_fundamentals)
+            html = ""
+            for i, r in enumerate(ranked, 1):
+                sc = f'{r["score"]}/100' if r["score"] is not None else "N/A"
+                mo = f'{r["mom"]:+.1f}% 1y' if r["mom"] is not None else ""
+                fl = ' · <span style="color:#C53929">fails screen</span>' if r["fails"] else ""
+                html += (f'<div class="rankrow"><span class="rn">{i}</span>'
+                         f'<b style="flex:1.2">{r["name"]}</b>'
+                         f'<span class="msym">{r["sym"]}</span>'
+                         f'<span class="rs">{sc}</span><span>{mo}{fl}</span></div>')
+            st.markdown(html, unsafe_allow_html=True)
+            st.markdown('<div class="diag">Weighted 11-factor screen vs fixed guide bands '
+                        '— a screening view, <b>not</b> a buy list.</div>',
+                        unsafe_allow_html=True)
+
     _sec("Research a ticker")
     r1, r2, r3 = st.columns([2, 2, 1])
     pick = r1.selectbox("From the list", [f"{n} ({s})" for s, n in cdef[seg]],
                         key=f"mkt_pick_{country}_{seg}")
     custom = r2.text_input("…or any Yahoo symbol", key="mkt_custom",
                            placeholder="e.g. TSLA, WES.AX, VAP.AX")
-    if r3.button("⟳ Refresh data", key="mkt_refresh", type="secondary"):
+    if r3.button("Refresh data", key="mkt_refresh", type="secondary"):
         for fn in (load_history, load_fundamentals):
             if hasattr(fn, "clear"):
                 fn.clear()
@@ -1101,32 +1201,28 @@ def page_markets():
     _sec(f"Fundamentals check — {sym}")
     if not info or len(info) < 3:
         _note("Fundamentals are unavailable for this symbol right now (Yahoo's data is "
-              "patchy for some listings, and ETFs/bond funds have no company fundamentals). "
-              "The price history above still works.", "warn")
+              "patchy for some listings). The price history above still works.", "warn")
+    elif is_fund(info):
+        res = etf_rows(info, ytd_from_history(s))
+        _render_rows(res["rows"])
+        _note(f"<b>{res['passed']} of {res['rated']}</b> fund checks healthy — for funds, "
+              f"fees, scale and what the index holds are what matter.", "info")
     else:
-        res = fundamentals_rows(info)
-        rows_html = ""
-        for r in res["rows"]:
-            c = _FCLR[r["status"]]
-            rows_html += (f'<div class="frow"><span class="fl">{r["label"]}</span>'
-                          f'<span class="fv">{r["val"]}</span>'
-                          f'<span class="fs" style="color:{c}">● {_FTXT[r["status"]]}</span>'
-                          f'<span class="fg">{r["guide"]}</span></div>')
-        st.markdown(rows_html, unsafe_allow_html=True)
-        sc = "#16794D" if res["passed"] >= res["rated"] * 0.7 else \
-             ("#B7791F" if res["passed"] >= res["rated"] * 0.4 else "#C53929")
-        st.markdown(f'<div class="note" style="border-color:{sc}">'
-                    f'<b>{res["passed"]} of {res["rated"]}</b> rated checks look healthy. '
-                    f'This is a screening aid: thresholds are general guides and several '
-                    f'(P/E, current ratio, debt/equity) are industry-relative — banks and '
-                    f'REITs legitimately break them. A passing screen is where research '
-                    f'<i>starts</i>: moat, management, industry trend and your own position '
-                    f'sizing are not in any ratio.</div>', unsafe_allow_html=True)
+        res = stock_rows(info, q["yr"] * 100)
+        if res["fails"]:
+            _note("Fails the quality screen: " + "; ".join(res["fails"]) + ".", "alert")
+        if res["score"] is not None:
+            scc = "#16794D" if res["score"] >= 70 else ("#B7791F" if res["score"] >= 40 else "#C53929")
+            st.markdown(_mcard("Weighted Factor Score", f"{res['score']}/100",
+                               f"11-factor model · {int(res['weight_cover']*100)}% of weights "
+                               f"had data", scc,
+                               "#E7F5EC" if res["score"] >= 70 else "#FBF3E2" if res["score"] >= 40 else "#FBEAE7"),
+                        unsafe_allow_html=True)
+        _render_rows(res["rows"])
+        st.markdown(f'<div class="note"><b>{res["passed"]} of {res["rated"]}</b> checks healthy '
+                    f'— a screening guide only; several ratios are industry-relative (banks & '
+                    f'REITs legitimately break them).</div>', unsafe_allow_html=True)
 
-    _note("The illustrative range projects this asset's past volatility one year forward "
-          "(±1σ), with the historical drift clamped so momentum never dominates. Markets do "
-          "not follow the past — treat it as a width-of-uncertainty illustration, never a "
-          "prediction. Past performance does not guarantee future results.", "warn")
 
 
 # ════════════════════════════ STEP 5 — ACTIONS ════════════════════════════
@@ -1228,9 +1324,9 @@ def page_actions():
         bg2,ac=cmap[k]
         st.markdown(f'<div class="action" style="border-left:3.5px solid {ac}"><div class="ah"><span class="num" style="background:{ac}">{idx}</span>'
                     f'<span class="tag" style="background:{bg2};color:{ac}">{tmap[k]}</span><span class="at">{t}</span></div><div class="ad">{d}</div></div>',unsafe_allow_html=True)
-    st.download_button("⤓ Download My Financial Report (.txt)",data=report_text(b,res,ga,rec,capW,tname,T,years),
+    st.download_button("Download My Financial Report (.txt)",data=report_text(b,res,ga,rec,capW,tname,T,years),
         file_name="seralung_finance_report.txt",mime="text/plain",use_container_width=True)
-    with st.expander("📐 See the calculation details (every formula)"):
+    with st.expander("Calculation details (every formula)"):
         st.markdown(calculation_notes())
     sec("Share Your Feedback")
     if ss["fb_sent"]:
@@ -1243,7 +1339,7 @@ def page_actions():
                 ss["fb_rating"]=n; st.rerun()
         st.text_input("Your name",key="fb_name",placeholder="e.g. Sarah")
         st.text_area("Your feedback",key="fb_text",placeholder="What did you think? What could be better?")
-        if st.button("✓ Submit Feedback",disabled=ss["fb_rating"]==0): ss["fb_sent"]=True; st.rerun()
+        if st.button("Submit Feedback",disabled=ss["fb_rating"]==0): ss["fb_sent"]=True; st.rerun()
 
 # ════════════════════════════ DISPATCH + NAV ════════════════════════════
 {1:page_budget,2:page_health,3:page_portfolio,4:page_markets,5:page_actions}[step]()
