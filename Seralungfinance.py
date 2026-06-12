@@ -289,6 +289,7 @@ def mcard(l,v,s,clr="#16794D",bg="#fff"):
 def assess_health(b):
     """Assemble inputs and run the institutional engine + a complementary MC probability."""
     capL=cap_level(capacity(b))[0]; tolL=tol_profile(ss)[1]; rec=rec_tier(capL,tolL)
+    ss["rec_tier"]=rec   # share with Market Research / Style Basket
     rp,sd=TIER_M[rec]["rp"],TIER_M[rec]["sd"]
     surplus=max(0,b["surplus"])+sf(ss["employer_contrib"])
     T=goal_target(ss); years=int(sf(ss["goal_years"]) or 1)
@@ -695,6 +696,43 @@ CODE2SYM = {"USD": "US$", "AUD": "A$", "GBP": "£", "GBp": "GBp ", "INR": "₹",
             "CAD": "C$", "EUR": "€", "JPY": "¥", "HKD": "HK$", "SGD": "S$",
             "NZD": "NZ$", "CHF": "CHF "}
 
+# Style Basket universe — verified June 2026 against public rankings.
+# 7 styles × 5 tickers per country. Examples to research, never recommendations.
+STYLE_UNIVERSE = {
+    "United States": {
+        "Blue-chip dividends":  [("JNJ","Johnson & Johnson"),("PG","Procter & Gamble"),("KO","Coca-Cola"),("PEP","PepsiCo"),("MCD","McDonald's")],
+        "Large-cap quality":    [("MSFT","Microsoft"),("AAPL","Apple"),("V","Visa"),("MA","Mastercard"),("JPM","JPMorgan Chase")],
+        "Growth":               [("NVDA","NVIDIA"),("GOOGL","Alphabet"),("AMZN","Amazon"),("META","Meta Platforms"),("AVGO","Broadcom")],
+        "Mid/small-cap growth": [("PLTR","Palantir"),("CRWD","CrowdStrike"),("SNOW","Snowflake"),("NET","Cloudflare"),("DDOG","Datadog")],
+        "Defensive":            [("WMT","Walmart"),("COST","Costco"),("UNH","UnitedHealth"),("DUK","Duke Energy"),("CL","Colgate-Palmolive")],
+        "Real estate":          [("WELL","Welltower"),("PLD","Prologis"),("AMT","American Tower"),("EQIX","Equinix"),("DLR","Digital Realty")],
+        "Bonds":                [("BND","Vanguard Total Bond"),("AGG","iShares Core US Aggregate"),("TLT","iShares 20+ Yr Treasury"),("LQD","iShares IG Corporate"),("SGOV","iShares 0-3 Mo Treasury")],
+    },
+    "Australia": {
+        "Blue-chip dividends":  [("CBA.AX","Commonwealth Bank"),("WBC.AX","Westpac Banking"),("NAB.AX","National Australia Bank"),("ANZ.AX","ANZ Group"),("TLS.AX","Telstra Group")],
+        "Large-cap quality":    [("CSL.AX","CSL Limited"),("MQG.AX","Macquarie Group"),("WES.AX","Wesfarmers"),("WOW.AX","Woolworths Group"),("RIO.AX","Rio Tinto")],
+        "Growth":               [("WTC.AX","WiseTech Global"),("XRO.AX","Xero"),("PME.AX","Pro Medicus"),("REA.AX","REA Group"),("TNE.AX","TechnologyOne")],
+        "Mid/small-cap growth": [("360.AX","Life360"),("NXT.AX","NEXTDC"),("ALU.AX","Altium"),("CAR.AX","CAR Group"),("SDR.AX","SiteMinder")],
+        "Defensive":            [("COL.AX","Coles Group"),("WOW.AX","Woolworths Group"),("RMD.AX","ResMed"),("APA.AX","APA Group"),("AGL.AX","AGL Energy")],
+        "Real estate":          [("GMG.AX","Goodman Group"),("SCG.AX","Scentre Group"),("SGP.AX","Stockland"),("DXS.AX","Dexus"),("MGR.AX","Mirvac Group")],
+        "Bonds":                [("VAF.AX","Vanguard Aust. Fixed Interest"),("VGB.AX","Vanguard Aust. Govt Bond"),("IAF.AX","iShares Core Composite Bond"),("VBND.AX","Vanguard Global Aggregate"),("BOND.AX","SPDR S&P/ASX Bond")],
+    },
+}
+STYLES = ["Blue-chip dividends","Large-cap quality","Growth","Mid/small-cap growth","Defensive","Real estate","Bonds"]
+
+# Tier -> style allocation (%). Each row sums to 100. Auto-applied from the user's
+# suggested risk tier (capacity + tolerance). A safety-first profile leans on bonds
+# and dividends; aggressive leans on growth + small-cap. Tunable but principled.
+TIER_MIX = {
+    #                     BlueDiv Quality Growth SmallG Defns RealE Bonds
+    "Defensive":        [    30,     10,      0,     0,    15,    5,   40],
+    "Conservative":     [    25,     20,      5,     0,    10,   10,   30],
+    "Balanced":         [    15,     25,     20,     5,    10,   10,   15],
+    "Growth":           [     8,     22,     35,    12,     5,   10,    8],
+    "Aggressive":       [     5,     15,     40,    25,     0,   10,    5],
+}
+assert all(sum(v)==100 for v in TIER_MIX.values()), "every tier mix must sum to 100"
+
 # Weighted multi-factor model for stocks/REITs (weights per the screener spec).
 STOCK_WEIGHTS = {"Return on equity": 0.12, "Return on assets": 0.10,
                  "Gross margin": 0.08, "Operating margin": 0.10,
@@ -1079,6 +1117,88 @@ def _render_rows(rows):
     st.markdown(html, unsafe_allow_html=True)
 
 
+def page_style_basket():
+    """Auto-applied mix from the user's suggested tier; tickers under each style."""
+    ss=st.session_state
+    # Recover the user's suggested tier from session (set on the Financial Health step).
+    # Fall back to "Balanced" if the user hasn't visited that step yet.
+    rec=ss.get("rec_tier","Balanced")
+    if rec not in TIER_MIX: rec="Balanced"
+    mix=TIER_MIX[rec]; country=ss.get("country","United States")
+    universe=STYLE_UNIVERSE[country]
+    cur=COUNTRIES[country]["cur"]
+
+    _sec("Your Style Basket")
+    st.markdown(f'<div class="goalwrap"><div class="gt">Mix follows your {rec} tier</div>'
+                f'<h3>Styles weighted to match your risk profile</h3>'
+                f'<div class="gsub">5 candidate tickers per style — examples to research, '
+                f'<b>not</b> a portfolio recommendation. Set your goal on the Financial '
+                f'Health step to update your tier.</div></div>',
+                unsafe_allow_html=True)
+
+    # Show the mix as a simple horizontal bar of coloured segments + a legend
+    seg_clr=["#0E5C39","#16794D","#7C3AED","#3DA968","#0E7C7B","#B7791F","#475569"]
+    bar=""
+    for w,clr in zip(mix,seg_clr):
+        if w>0: bar+=f'<div style="background:{clr};height:18px;width:{w}%;" title="{w}%"></div>'
+    st.markdown(f'<div class="card" style="padding:14px 16px;margin-top:6px">'
+                f'<div style="display:flex;border-radius:6px;overflow:hidden;border:1px solid #E3E8EF">{bar}</div>',
+                unsafe_allow_html=True)
+    lg=""
+    for st_name,w,clr in zip(STYLES,mix,seg_clr):
+        if w>0: lg+=f'<div class="li"><span class="sw" style="background:{clr}"></span>{st_name} <b>{w}%</b></div>'
+    st.markdown(f'<div class="legend" style="justify-content:flex-start;margin-top:10px">{lg}</div></div>',
+                unsafe_allow_html=True)
+
+    # Each non-zero style: header with its allocation + the 5 candidate tickers (live)
+    for st_name,w,clr in zip(STYLES,mix,seg_clr):
+        if w<=0: continue
+        _sec(f"{st_name} — {w}%")
+        rows=""
+        for sym,name in universe[st_name]:
+            s=load_history(sym)
+            rows+=_row(sym,name,s,cur)
+        st.markdown(rows,unsafe_allow_html=True)
+
+
+def page_custom_mix():
+    """Advanced view: drag 7 style sliders to build a custom mix (must sum to 100)."""
+    ss=st.session_state
+    _sec("Custom Style Mix")
+    st.markdown('<div class="diag">Build your own style allocation. Sliders adjust live '
+                'and must sum to 100% to apply. Educational view — <b>not</b> investment '
+                'advice.</div>',unsafe_allow_html=True)
+    country=ss.get("country","United States"); universe=STYLE_UNIVERSE[country]; cur=COUNTRIES[country]["cur"]
+
+    # Seed defaults from the suggested tier the first time the page is opened.
+    rec=ss.get("rec_tier","Balanced")
+    if rec not in TIER_MIX: rec="Balanced"
+    for st_name,default in zip(STYLES,TIER_MIX[rec]):
+        ss.setdefault(f"cm_{st_name}",default)
+
+    cols=st.columns(2)
+    for i,st_name in enumerate(STYLES):
+        with cols[i%2]:
+            st.slider(st_name,0,100,key=f"cm_{st_name}")
+    total=sum(int(ss[f"cm_{st_name}"]) for st_name in STYLES)
+    tc="#16794D" if total==100 else "#C53929"
+    st.markdown(f'<div class="card" style="padding:12px 16px;margin-top:8px;'
+                f'display:flex;justify-content:space-between;align-items:center">'
+                f'<b style="font-size:.92rem">Total allocation</b>'
+                f'<span style="font-family:JetBrains Mono;font-weight:800;font-size:1.05rem;color:{tc}">{total}%</span></div>',
+                unsafe_allow_html=True)
+    if total!=100:
+        _note(f"Adjust the sliders so they sum to <b>100%</b> (currently {total}%) "
+              f"before exploring the mix.","warn"); return
+    seg_clr=["#0E5C39","#16794D","#7C3AED","#3DA968","#0E7C7B","#B7791F","#475569"]
+    for st_name,clr in zip(STYLES,seg_clr):
+        w=int(ss[f"cm_{st_name}"])
+        if w<=0: continue
+        _sec(f"{st_name} — {w}%")
+        rows="".join(_row(sym,name,load_history(sym),cur) for sym,name in universe[st_name])
+        st.markdown(rows,unsafe_allow_html=True)
+
+
 def page_markets():
     ss = st.session_state
     st.markdown("""<style>
@@ -1110,11 +1230,19 @@ def page_markets():
               "requirements.txt and reboot the app.", "alert")
         return
 
-    _sec("Choose a country &amp; market")
-    c1, c2 = st.columns([1.4, 3])
-    country = c1.selectbox("Country", list(COUNTRIES), key="country")
-    seg = c2.radio("Segment", SEGMENTS, horizontal=True, key="mkt_seg",
+    _sec("Choose a view")
+    vc1,vc2=st.columns([2,3])
+    vc1.selectbox("Country", list(COUNTRIES), key="country")
+    view=vc2.radio("View",["Top 5 by segment","Style Basket (tier-based)","Custom mix"],
+                   key="mkt_view",horizontal=True,label_visibility="collapsed")
+    if view=="Style Basket (tier-based)":
+        page_style_basket(); return
+    if view=="Custom mix":
+        page_custom_mix(); return
+    _sec("Segment")
+    seg = st.radio("Segment", SEGMENTS, horizontal=True, key="mkt_seg",
                    label_visibility="collapsed")
+    country=st.session_state["country"]
     cdef = COUNTRIES[country]
     cur = cdef["cur"]
 
