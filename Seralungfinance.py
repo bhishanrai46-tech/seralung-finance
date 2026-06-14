@@ -10,7 +10,7 @@ FINANCIAL HEALTH MODEL (realistic, multi-dimensional):
       computed by Monte Carlo in REAL (inflation-adjusted) terms, net of fees/tax,
       counting invested assets + ongoing contributions (incl. employer).
   The 50/30/20 rule is no longer scored — it is shown only as a budget diagnostic.
-  Full formulas: calculation_notes()  (also shown in-app on the Action Plan step).
+  Full formulas: calculation_notes()  (also shown in-app on the Calculation Summary step).
 """
 import base64
 import numpy as np
@@ -241,7 +241,7 @@ STEP_META=[("budget","Budget","📁","#F59E0B","#FBEFD8","Budget","Know your fin
            ("health","Fin. Health","💎","#06B6D4","#D6F1F7","Financial Health","Set your goal, then score your fitness to reach it"),
            ("portfolio","Portfolio","◔","#7C3AED","#ECE6FB","Portfolio Diversification","Explore investment tiers"),
            ("markets","Markets","📈","#F97316","#FCE7D6","Market Research","Live prices & fundamentals — US & Australian markets"),
-           ("actions","Actions","✅","#10B981","#D7F5E6","Action Plan","Get your personalised plan")]
+           ("actions","Summary","✅","#10B981","#D7F5E6","Calculation Summary","What the numbers in this calculator describe")]
 fmt=lambda n:"$"+format(int(round(n)),",")
 
 # ════════════════════════════ STATE ════════════════════════════
@@ -259,11 +259,28 @@ def init_state():
 init_state(); ss=st.session_state
 def goto(s): ss["step"]=s; ss["max_step"]=max(ss["max_step"],s)
 
+# ════════════════════════════ COMPLIANCE GATE ════════════════════════════
+st.session_state.setdefault("ack",False)
+if not st.session_state["ack"]:
+    st.markdown(CSS,unsafe_allow_html=True)
+    st.markdown('<div class="topbar"><div><h1>Seralung Finance</h1><p>Financial-education calculator</p></div></div>',unsafe_allow_html=True)
+    st.markdown('<div class="card" style="padding:22px 26px;margin:30px auto;max-width:760px">'
+        '<h2 style="font-size:1.2rem;margin-bottom:10px!important">Before you continue</h2>'
+        '<p style="font-size:.92rem;line-height:1.6;color:#1E2A32">Seralung Finance is a <b>financial-education calculator</b>. '
+        'It computes ratios, illustrates capital-market statistics and shows historical market data so you can understand how they work.</p>'
+        '<p style="font-size:.92rem;line-height:1.6;color:#1E2A32;margin-top:10px">It does <b>not</b> provide personal financial product advice and is <b>not</b> a recommendation to buy, sell or hold any investment. Information here is general only — it does not take into account your objectives, financial situation or needs.</p>'
+        '<p style="font-size:.92rem;line-height:1.6;color:#1E2A32;margin-top:10px">Before acting on anything you see here, consider whether it is appropriate for you and consult a licensed financial adviser. In Australia you can verify advisers via <b>ASIC Connect — Financial Advisers Register</b> (moneysmart.gov.au).</p>'
+        '<p style="font-size:.78rem;color:#64748B;margin-top:14px">Market data: Yahoo Finance, typically delayed ~20 min. Educational use only.</p>'
+        '</div>',unsafe_allow_html=True)
+    if st.button("I understand — continue to the calculator",key="ack_btn"):
+        st.session_state["ack"]=True; st.rerun()
+    st.stop()
+
 # ════════════════════════════ SHELL ════════════════════════════
 st.markdown(CSS,unsafe_allow_html=True)
 step=ss["step"]; meta=STEP_META[step-1]; accent,abg=meta[3],meta[4]
 dots="".join(f'<i class="{"on" if i<step else ""}"></i>' for i in range(5))
-st.markdown(f'<div class="topbar"><div><h1>Seralung Finance</h1><p>Understand Risk. Invest with Confidence.</p></div>'
+st.markdown(f'<div class="topbar"><div><h1>Seralung Finance</h1><p>Financial-education calculator · not personal advice</p></div>'
             f'<div class="pillc"><span>{step}/5 steps complete</span><span class="dotz">{dots}</span></div></div>',unsafe_allow_html=True)
 nav=""
 for i,m in enumerate(STEP_META):
@@ -414,24 +431,23 @@ def page_health():
     r1.markdown(mcard("Risk Tolerance",tname,f"Level {tolL2}/5 · score {tscore}/40",TIER_CLR.get(rec,'#16794D'),"#E7F5EC"),unsafe_allow_html=True)
     capclr=["#C53929","#C53929","#B7791F","#0E7C7B","#16794D"][capL2-1]; capbg=["#FBEAE7","#FBEAE7","#FBF3E2","#DFF2F1","#E7F5EC"][capL2-1]
     r2.markdown(mcard("Risk Capacity",capW,f"Level {capL2}/5 · from your budget",capclr,capbg),unsafe_allow_html=True)
-    r3.markdown(mcard("Suggested Tier",rec,"Prudent match (lower of the two)",TIER_CLR[rec],TIER_BG[rec]),unsafe_allow_html=True)
+    r3.markdown(mcard("Aligned reference tier",rec,"Calculator pairing of capacity + tolerance — descriptive, not a recommendation",TIER_CLR[rec],TIER_BG[rec]),unsafe_allow_html=True)
 
 # ════════════════════════════ STEP 3 — PORTFOLIO ════════════════════════════
 def page_portfolio():
     b=ss.get("budget") or compute_budget(ss)
     capL=cap_level(capacity(b))[0]; tolL=tol_profile(ss)[1]; rec=rec_tier(capL,tolL); recClr=TIER_CLR.get(rec,"#16794D")
     note("Five model portfolios from lowest to highest risk, with key risk and return figures for each.")
-    note(f'Based on your risk capacity and tolerance, your suggested starting tier is <b style="color:{recClr}">{rec}</b>.')
     sec("Choose a tier to explore")
     cols=st.columns(5)
     for i,t in enumerate(TIERS):
-        if cols[i].button(("★ "+t) if t==rec else t,key=f"tier_{t}",type="primary" if t==ss["selected_tier"] else "secondary"):
+        if cols[i].button(t,key=f"tier_{t}",type="primary" if t==ss["selected_tier"] else "secondary"):
             ss["selected_tier"]=t; st.rerun()
     t=ss["selected_tier"] if ss["selected_tier"] in TIERS else rec; m=TIER_M[t]; clr,bg=TIER_CLR[t],TIER_BG[t]
     d1,d2=st.columns(2)
     segs=[(f"{ASSETS[i]} {TIER_W[t][i]}%",TIER_W[t][i],ASSET_CLR[i]) for i in range(6) if TIER_W[t][i]>0]
     d1.markdown(f'<div class="card" style="padding:16px">{donut(segs,t)}{legend(segs)}</div>',unsafe_allow_html=True)
-    title=f"{t} · suggested for you" if t==rec else t
+    title=t
     d2.markdown(f'<div class="tierhead" style="border-left-color:{clr};background:{bg}"><h3 style="color:{clr}">{title}</h3>'
                 f'<div class="er">Expected return <b style="color:#1E2A32">{m["rp"]*100:.1f}%</b> p.a. · Volatility <b style="color:#1E2A32">{m["sd"]*100:.1f}%</b></div></div>',unsafe_allow_html=True)
     mm=d2.columns(2)
@@ -439,12 +455,13 @@ def page_portfolio():
     mm[0].markdown(mcard("Value at Risk (95%)",f"{m['var95']*100:.1f}%","Worst year in 20 (1-yr)","#C53929","#FBEAE7"),unsafe_allow_html=True)
     mm[1].markdown(mcard("Diversification",f"{m['div']:.2f}×","Higher = better spread","#0E7C7B","#DFF2F1"),unsafe_allow_html=True)
     mm[1].markdown(mcard("Est. Max Drawdown",f"{m['maxdd']*100:.0f}%","Peak-to-trough estimate","#B7791F","#FBF3E2"),unsafe_allow_html=True)
-    sec(f"Investment options for {t}")
+    sec(f"Asset classes commonly associated with {t}")
+    st.markdown('<div class="diag">General asset categories typically discussed in this risk band — examples for context, not a shortlist to invest in.</div>',unsafe_allow_html=True)
     st.markdown("".join(f'<div class="opt-item" style="border-left-color:{clr}">{o}</div>' for o in TIER_OPT[t]),unsafe_allow_html=True)
     sec("All Tiers Compared")
     rows=""
     for tt in TIERS:
-        mt=TIER_M[tt]; star=" ★" if tt==rec else ""
+        mt=TIER_M[tt]; star=""
         rows+=(f'<tr style="background:{TIER_BG[tt] if tt==rec else "#fff"}"><td class="tn" style="color:{TIER_CLR[tt]}">{tt}{star}</td>'
                f'<td>{mt["rp"]*100:.1f}%</td><td>{mt["sd"]*100:.1f}%</td><td>{mt["sharpe"]:.2f}</td>'
                f'<td style="color:#C53929">{mt["var95"]*100:.1f}%</td><td style="color:#C53929">{mt["cvar95"]*100:.1f}%</td><td style="color:#B7791F">{mt["maxdd"]*100:.0f}%</td></tr>')
@@ -750,7 +767,8 @@ def _demo_on() -> bool:
 def _demo_series(symbol: str) -> pd.Series:
     idx = pd.date_range(end=pd.Timestamp.today().normalize(), periods=252, freq="B")
     rng = np.random.default_rng(abs(hash(symbol)) % (2 ** 31))
-    p = 100 * np.exp(np.cumsum(rng.normal(0.0004, 0.011, 252)))
+    n = len(idx)                                     # B-freq can yield ≠252 across year boundaries
+    p = 100 * np.exp(np.cumsum(rng.normal(0.0004, 0.011, n)))
     return pd.Series(p, index=idx)
 
 
@@ -1118,22 +1136,29 @@ def _render_rows(rows):
 
 
 def page_style_basket():
-    """Auto-applied mix from the user's suggested tier; tickers under each style."""
+    """Reference style mixes (Defensive..Aggressive) for learning — user picks; no auto-application."""
     ss=st.session_state
     # Recover the user's suggested tier from session (set on the Financial Health step).
     # Fall back to "Balanced" if the user hasn't visited that step yet.
-    rec=ss.get("rec_tier","Balanced")
-    if rec not in TIER_MIX: rec="Balanced"
-    mix=TIER_MIX[rec]; country=ss.get("country","United States")
+    # No auto-application from the user's profile. The user explicitly picks a
+    # reference mix to explore — this keeps the page descriptive, not prescriptive.
+    chosen=ss.get("style_pick","Balanced")
+    if chosen not in TIER_MIX: chosen="Balanced"
+    mix=TIER_MIX[chosen]; country=ss.get("country","United States")
     universe=STYLE_UNIVERSE[country]
     cur=COUNTRIES[country]["cur"]
 
-    _sec("Your Style Basket")
-    st.markdown(f'<div class="goalwrap"><div class="gt">Mix follows your {rec} tier</div>'
-                f'<h3>Styles weighted to match your risk profile</h3>'
-                f'<div class="gsub">5 candidate tickers per style — examples to research, '
-                f'<b>not</b> a portfolio recommendation. Set your goal on the Financial '
-                f'Health step to update your tier.</div></div>',
+    _sec("Reference Style Mixes")
+    st.markdown('<div class="diag">Five reference allocations used in financial-education '
+                'materials to illustrate how style weights span the risk spectrum. <b>Pick one '
+                'below to view its composition</b> — the calculator does <b>not</b> recommend a mix.</div>',
+                unsafe_allow_html=True)
+    chosen=st.radio("Reference mix to explore",list(TIER_MIX.keys()),
+                    index=list(TIER_MIX.keys()).index(chosen),horizontal=True,key="style_pick",
+                    label_visibility="collapsed")
+    mix=TIER_MIX[chosen]
+    st.markdown(f'<div class="diag">Showing the <b>{chosen}</b> reference mix. Tickers listed '
+                f'are examples discussed in financial media, <b>not</b> a buy list.</div>',
                 unsafe_allow_html=True)
 
     # Show the mix as a simple horizontal bar of coloured segments + a legend
@@ -1164,16 +1189,16 @@ def page_style_basket():
 def page_custom_mix():
     """Advanced view: drag 7 style sliders to build a custom mix (must sum to 100)."""
     ss=st.session_state
-    _sec("Custom Style Mix")
+    _sec("Style Allocation Sandbox")
     st.markdown('<div class="diag">Build your own style allocation. Sliders adjust live '
                 'and must sum to 100% to apply. Educational view — <b>not</b> investment '
                 'advice.</div>',unsafe_allow_html=True)
     country=ss.get("country","United States"); universe=STYLE_UNIVERSE[country]; cur=COUNTRIES[country]["cur"]
 
     # Seed defaults from the suggested tier the first time the page is opened.
-    rec=ss.get("rec_tier","Balanced")
-    if rec not in TIER_MIX: rec="Balanced"
-    for st_name,default in zip(STYLES,TIER_MIX[rec]):
+    # Seed sliders from the Balanced reference for everyone — no use of the
+    # user's tier here, to keep the page non-prescriptive.
+    for st_name,default in zip(STYLES,TIER_MIX["Balanced"]):
         ss.setdefault(f"cm_{st_name}",default)
 
     cols=st.columns(2)
@@ -1223,8 +1248,9 @@ def page_markets():
 @media(max-width:700px){.mktrow{flex-wrap:wrap}.mktrow .mspark{flex:1 1 100%}}
 </style>""", unsafe_allow_html=True)
 
-    _note("Yahoo Finance data (free, quotes delayed ~20 min). Educational reference — "
-          "<b>not</b> buy or sell advice.")
+    _note("<b>Educational reference only — not investment advice.</b> Live Yahoo Finance data "
+          "(delayed ~20 min). Information is general, does not consider your objectives or "
+          "circumstances, and is not a recommendation to buy or sell anything.")
     if not YF_OK and not _demo_on():
         _note("The <b>yfinance</b> package is not installed — add <code>yfinance</code> to "
               "requirements.txt and reboot the app.", "alert")
@@ -1233,11 +1259,11 @@ def page_markets():
     _sec("Choose a view")
     vc1,vc2=st.columns([2,3])
     vc1.selectbox("Country", list(COUNTRIES), key="country")
-    view=vc2.radio("View",["Top 5 by segment","Style Basket (tier-based)","Custom mix"],
+    view=vc2.radio("View",["Reference examples","Style mixes (educational)","Allocation sandbox"],
                    key="mkt_view",horizontal=True,label_visibility="collapsed")
-    if view=="Style Basket (tier-based)":
+    if view=="Style mixes (educational)":
         page_style_basket(); return
-    if view=="Custom mix":
+    if view=="Allocation sandbox":
         page_custom_mix(); return
     _sec("Segment")
     seg = st.radio("Segment", SEGMENTS, horizontal=True, key="mkt_seg",
@@ -1246,7 +1272,7 @@ def page_markets():
     cdef = COUNTRIES[country]
     cur = cdef["cur"]
 
-    _sec(f"Top 5 — {country} · {seg}")
+    _sec(f"Reference examples — {country} · {seg}")
     extra = cdef.get("note", {}).get(seg, "")
     st.markdown(f'<div class="diag">Curated by market size (verified June 2026) — examples, '
                 f'<b>not</b> recommendations.{" " + extra if extra else ""}</div>',
@@ -1265,7 +1291,7 @@ def page_markets():
     # weighted ranking of the visible five (stocks & REITs only — funds lack these factors)
     if seg in ("Stocks", "Real Estate"):
         rk = f"ranked_{country}_{seg}"
-        if st.button("Rank these 5 by factor score", key=f"rankbtn_{country}_{seg}",
+        if st.button("See how the model scores them (educational)", key=f"rankbtn_{country}_{seg}",
                      type="secondary"):
             ss[rk] = True
         if ss.get(rk):
@@ -1282,7 +1308,7 @@ def page_markets():
                          f'<span class="rs">{sc}</span><span>{mo}{fl}</span></div>')
             st.markdown(html, unsafe_allow_html=True)
             st.markdown('<div class="diag">Weighted 11-factor screen vs fixed guide bands '
-                        '— a screening view, <b>not</b> a buy list.</div>',
+                        '— an educational screening view, <b>not</b> a buy list.</div>',
                         unsafe_allow_html=True)
 
     _sec("Research a ticker")
@@ -1333,12 +1359,12 @@ def page_markets():
     elif is_fund(info):
         res = etf_rows(info, ytd_from_history(s))
         _render_rows(res["rows"])
-        _note(f"<b>{res['passed']} of {res['rated']}</b> fund checks healthy — for funds, "
-              f"fees, scale and what the index holds are what matter.", "info")
+        _note(f"<b>{res['passed']} of {res['rated']}</b> indicators meet the general guide thresholds. "
+              f"Fees, scale and what the index holds typically dominate fund decisions — general information only.", "info")
     else:
         res = stock_rows(info, q["yr"] * 100)
         if res["fails"]:
-            _note("Fails the quality screen: " + "; ".join(res["fails"]) + ".", "alert")
+            _note("This ticker does <b>not</b> meet one or more of the calculator's general quality thresholds: " + "; ".join(res["fails"]) + ". Descriptive, not a recommendation.", "warn")
         if res["score"] is not None:
             scc = "#16794D" if res["score"] >= 70 else ("#B7791F" if res["score"] >= 40 else "#C53929")
             st.markdown(_mcard("Weighted Factor Score", f"{res['score']}/100",
@@ -1355,27 +1381,32 @@ def page_markets():
 
 # ════════════════════════════ STEP 5 — ACTIONS ════════════════════════════
 def build_recs(b,res,ga,rec,capW,tname,tolL,capL,T,years):
-    bd=res["breakdown"]; dg=res["diagnostics"]; pj=res["projections"]; recs=[]
-    if bd["liquidity_elasticity"]<bd_max(20)*0.5:
-        recs.append(("alert","Build your emergency fund first",f"You are below half of your {dg['target_runway_months']}-month target. Aim for {fmt(b['essential']*dg['target_runway_months'])} in cash before taking market risk."))
+    """Neutral educational prompts triggered by calculation values.
+    Each item describes what the numbers SAY, not what the user SHOULD do."""
+    bd=res["breakdown"]; pj=res["projections"]; recs=[]
+    if bd["liquidity_elasticity"]<10:
+        recs.append(("info","Emergency runway is below the general benchmark",
+            f"Your calculated runway is {b['runway']:.1f} months. Households commonly use 3–6 months of essential expenses as a buffer benchmark; this is general information, not a prescription."))
     elif bd["liquidity_elasticity"]<20:
-        recs.append(("warn","Top up your emergency fund",f"Build toward {dg['target_runway_months']} months ({fmt(b['essential']*dg['target_runway_months'])}) for a full buffer."))
-    if bd["insurance_security"]==0:
-        recs.append(("warn","Add basic protection",f"Without adequate life/health/income insurance you forfeit 15 resilience points — one shock can undo years of progress."))
-    if b["sr"]<0: recs.append(("alert","You are spending more than you earn",f"Expenses exceed income by {fmt(-b['surplus'])}/mo. No investment can outrun a monthly deficit."))
-    elif bd["savings_efficiency"]<7.5: recs.append(("warn","Lift your savings rate",f"You are saving {b['sr']*100:.0f}% of income. Reaching 25% sharply raises both halves of your score."))
-    if bd["debt_risk"]<5: recs.append(("alert","Reduce your debt service",f"Debt repayments are {b['dti']*100:.0f}% of income (lending norms cap near 36%). Bringing this under 20% restores full marks here."))
-    elif bd["debt_risk"]<10: recs.append(("warn","Watch your debt load",f"Debt service is {b['dti']*100:.0f}% of income — keep it under 20%."))
-    if dg["net_worth"]<0: recs.append(("alert","Your net worth is negative",f"Liabilities exceed assets by {fmt(-dg['net_worth'])}. Paying down principal is a guaranteed return and lifts your solvency score."))
-    elif bd["solvency_leverage"]<5: recs.append(("info","Build toward your net-worth target",f"Your age-based target is {fmt(dg['target_net_worth'])}. You're at {fmt(dg['net_worth'])} — grow assets and trim debt to close it."))
-    if bd["goal_trajectory"]<15: recs.append(("alert","Your goal needs more fuel",f"Only a {round(ga['prob']*100)}% chance of reaching {fmt(T)} in {years}y. Lift contributions toward {fmt(pj['required_monthly_surplus'])}/mo, extend the horizon, or consider a higher-growth tier."))
-    elif bd["goal_trajectory"]<25: recs.append(("warn","Goal is slightly behind",f"Projected to cover {min(999,pj['inflation_adjusted_fv']/T*100):.0f}% of {fmt(T)}. A small contribution increase closes the gap."))
-    gd=tolL-capL
-    if gd>=2: recs.append(("alert","Do not invest beyond your capacity",f"Your comfort with risk ({tname}) exceeds what your finances support ({capW}). Start at {rec}."))
-    elif gd<=-2: recs.append(("info","You can afford more growth when ready",f"Your finances ({capW}) could support more risk than your current comfort ({tname}). Increase exposure gradually."))
-    if res["total_score"]>=80 and bd["goal_trajectory"]>=25: recs.append(("good","You are positioned to invest toward your goal",f"Strong on both halves. Consider {fmt(max(0,b['surplus']))}/mo automated into {rec}."))
-    if not any(k in("alert","warn") for k,_,_ in recs): recs.append(("good","You are on a healthy path to your goal","No critical issues. Keep contributing consistently and review quarterly."))
-    recs.sort(key=lambda r:{"alert":0,"warn":1,"info":2,"good":3}[r[0]]); return recs
+        recs.append(("info","Emergency runway is partial vs the general benchmark",
+            f"Your calculated runway is {b['runway']:.1f} months relative to a 6-month general guide."))
+    if b["sr"]<0:
+        recs.append(("info","Your expenses currently exceed your income",
+            f"The calculator shows expenses exceeding income by {fmt(-b['surplus'])}/mo. Resources on cash-flow planning may be useful background reading."))
+    elif bd["savings_efficiency"]<7.5:
+        recs.append(("info","Savings rate is below 20% in this calculator",
+            f"You are saving {b['sr']*100:.0f}% of income. Calculators commonly use 20%+ as a reference benchmark; this is descriptive, not a recommendation."))
+    if bd["debt_risk"]<5:
+        recs.append(("info","Debt service is high relative to common benchmarks",
+            f"Debt repayments are {b['dti']*100:.0f}% of income. Lending norms commonly reference 36% total debt-to-income as a ceiling."))
+    if res["diagnostics"]["net_worth"]<0:
+        recs.append(("info","Net worth is calculated below zero",f"Calculator shows liabilities exceeding assets by {fmt(-res['diagnostics']['net_worth'])}."))
+    if bd["goal_trajectory"]<15:
+        recs.append(("info","Trajectory is well below the goal",
+            f"At the modelled return, the calculator projects {round(ga['prob']*100)}% probability of reaching {fmt(T)} in {years}y. Education topics on this scenario commonly include compounding, contribution growth and investment horizon."))
+    if not recs:
+        recs.append(("info","All calculator benchmarks are within general ranges","No flagged numbers. Continue reviewing periodically as inputs change."))
+    return recs
 
 def bd_max(x): return x  # readability helper
 
@@ -1439,20 +1470,20 @@ def page_actions():
     nA=sum(1 for r in recs if r[0]=="alert"); nW=sum(1 for r in recs if r[0]=="warn"); recClr=TIER_CLR.get(rec,"#16794D")
     res_pts=res["breakdown"]["liquidity_elasticity"]+res["breakdown"]["savings_efficiency"]+res["breakdown"]["insurance_security"]
     rdy_pts=res["breakdown"]["goal_trajectory"]+res["breakdown"]["solvency_leverage"]+res["breakdown"]["debt_risk"]
-    sec("Investment Readiness")
+    sec("Calculation Snapshot")
     a1,a2=st.columns(2)
     a1.markdown(f'<div class="card" style="padding:16px">{gauge(total,rclr)}</div>',unsafe_allow_html=True)
     a2.markdown(f'<div class="readwrap" style="border-left-color:{rclr};background:{rbg}"><div class="ov">Overall</div>'
                 f'<div class="rt" style="color:{rclr}">{res["rating_category"]}</div><div class="rd">{nA} critical item{"s" if nA!=1 else ""} and {nW} to watch. '
-                f'Resilience {res_pts:g}/50, readiness {rdy_pts:g}/50 ({round(ga["prob"]*100)}% chance). Suggested portfolio: <b style="color:{recClr}">{rec}</b>.</div></div>',unsafe_allow_html=True)
-    sec("Your Prioritised Action Plan")
-    cmap={"alert":("#FBEAE7","#C53929"),"warn":("#FBF3E2","#B7791F"),"info":("#E7F5EC","#16794D"),"good":("#E7F5EC","#16794D")}
-    tmap={"alert":"Do first","warn":"Important","info":"Consider","good":"On track"}
+                f'Resilience {res_pts:g}/50, readiness {rdy_pts:g}/50. Calculator pairs your responses with the {rec} reference tier for projections only — descriptive, not a recommendation.</div></div>',unsafe_allow_html=True)
+    sec("Educational notes about your numbers")
+    cmap={"alert":("#FBEAE7","#C53929"),"warn":("#FBF3E2","#B7791F"),"info":("#EEF1F5","#475569"),"good":("#E7F5EC","#16794D")}
+    tmap={"alert":"Note","warn":"Note","info":"Educational note","good":"Note"}
     for idx,(k,t,d) in enumerate(recs,1):
         bg2,ac=cmap[k]
         st.markdown(f'<div class="action" style="border-left:3.5px solid {ac}"><div class="ah"><span class="num" style="background:{ac}">{idx}</span>'
                     f'<span class="tag" style="background:{bg2};color:{ac}">{tmap[k]}</span><span class="at">{t}</span></div><div class="ad">{d}</div></div>',unsafe_allow_html=True)
-    st.download_button("Download My Financial Report (.txt)",data=report_text(b,res,ga,rec,capW,tname,T,years),
+    st.download_button("Download Calculation Summary (.txt)",data=report_text(b,res,ga,rec,capW,tname,T,years),
         file_name="seralung_finance_report.txt",mime="text/plain",use_container_width=True)
     with st.expander("Calculation details (every formula)"):
         st.markdown(calculation_notes())
@@ -1483,4 +1514,4 @@ with nb3:
     else:
         if st.button("Complete!",key="donebtn"): st.balloons()
 st.markdown('<div style="border-top:1px solid #E3E8EF;margin-top:24px;padding:14px 0;text-align:center;font-size:.72rem;color:#94A3B8">'
-            '<b style="color:#16794D">Seralung Finance</b> · Educational only — not personal financial advice.</div>',unsafe_allow_html=True)
+            '<b style="color:#16794D">Seralung Finance</b> · Financial-education tool. General information only — not personal financial product advice. Verify any decisions with a licensed adviser (Australia: <a href="https://moneysmart.gov.au/financial-advice" style="color:#0E7C7B">ASIC Moneysmart</a>). Market data via Yahoo Finance.</div>',unsafe_allow_html=True)
